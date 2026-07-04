@@ -22,6 +22,7 @@ import {
   SettingOutlined,
   SafetyOutlined,
   TabletOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -91,6 +92,9 @@ export default function MainLayout() {
     if (location.pathname === '/example') {
       return ['example']
     }
+    if (location.pathname === '/chat') {
+      return ['chat']
+    }
     if (location.pathname.startsWith('/')) {
       return ['dashboard']
     }
@@ -111,6 +115,11 @@ export default function MainLayout() {
           {
             key: 'example',
             label: <Link to="/example">示例模块</Link>,
+          },
+          {
+            key: 'chat',
+            icon: <MessageOutlined />,
+            label: <Link to="/chat">ChatWeb</Link>,
           },
         ],
       },
@@ -456,8 +465,10 @@ export default function MainLayout() {
               ? '管理员面板'
               : selectedKeys[0] === 'dashboard'
                 ? '工作台'
-                : selectedKeys[0] === 'example'
-                  ? '示例模块'
+              : selectedKeys[0] === 'example'
+                ? '示例模块'
+                : selectedKeys[0] === 'chat'
+                  ? 'ChatWeb'
                   : ''}
           </Typography.Title>
         </Header>

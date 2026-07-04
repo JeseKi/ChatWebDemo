@@ -18,3 +18,5 @@ httpx
 httpx[socks]
 types-python-jose
 alembic
+agno
+openai

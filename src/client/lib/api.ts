@@ -63,6 +63,19 @@ async function requestRefreshToken(): Promise<string | null> {
   }
 }
 
+export function getApiBaseUrl(): string {
+  return cleanupBaseUrl(api.defaults.baseURL) || '/api'
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  refreshRequest = refreshRequest ?? requestRefreshToken()
+  try {
+    return await refreshRequest
+  } finally {
+    refreshRequest = null
+  }
+}
+
 type RetryableConfig = AxiosRequestConfig & { _retry?: boolean }
 
 export function buildTwoFactorHeaders(code?: string): Record<string, string> | undefined {
@@ -94,9 +107,7 @@ api.interceptors.response.use(
       originalRequest._retry = true
 
       try {
-        refreshRequest = refreshRequest ?? requestRefreshToken()
-        const newAccessToken = await refreshRequest
-        refreshRequest = null
+        const newAccessToken = await refreshAccessToken()
 
         if (!newAccessToken) {
           throw error
@@ -106,7 +117,6 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         return api(originalRequest)
       } catch (refreshError) {
-        refreshRequest = null
         clearTokens()
         return Promise.reject(refreshError)
       }
