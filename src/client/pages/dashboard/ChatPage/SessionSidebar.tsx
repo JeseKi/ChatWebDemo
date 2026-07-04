@@ -1,5 +1,6 @@
 import {
   Button,
+  Divider,
   Empty,
   Flex,
   Input,
@@ -18,7 +19,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   MessageOutlined,
-  PlusOutlined,
 } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import type { ChatSession } from '../../../lib/chat'
@@ -69,18 +69,27 @@ export default function SessionSidebar({
             <Button type="text" icon={<ArrowLeftOutlined />} />
           </Link>
         </Tooltip>
-        <Flex align="center" gap={8}>
-          <Typography.Title level={5} style={{ margin: 0 }}>
-            对话
-          </Typography.Title>
-          <Tooltip title="新对话">
-            <Button icon={<PlusOutlined />} onClick={onStartNewSession} />
-          </Tooltip>
-        </Flex>
+        <Typography.Title level={5} style={{ margin: 0 }}>
+          对话
+        </Typography.Title>
         <Tooltip title="关闭侧栏">
           <Button type="text" icon={<CloseOutlined />} onClick={onClose} />
         </Tooltip>
       </Flex>
+      <Button
+        block
+        icon={<EditOutlined />}
+        onClick={onStartNewSession}
+        style={{
+          height: 40,
+          justifyContent: 'flex-start',
+          borderRadius: 8,
+          fontWeight: 500,
+        }}
+      >
+        新聊天
+      </Button>
+      <Divider style={{ margin: '12px 0' }} />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Spin spinning={loadingSessions}>
           <List

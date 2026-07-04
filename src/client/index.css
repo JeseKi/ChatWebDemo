@@ -74,6 +74,99 @@ a {
   background: var(--app-surface-muted);
 }
 
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  min-height: 96px;
+  max-height: 260px;
+  margin-top: 12px;
+  border: 1px solid var(--app-border-color);
+  border-radius: 28px;
+  padding: 14px 14px 12px 18px;
+  background: var(--app-elevated-bg);
+  box-shadow: var(--app-floating-shadow);
+}
+
+.chat-composer-input.ant-input {
+  flex: none;
+  max-height: 178px;
+  border: 0;
+  padding: 0 4px 0 0;
+  background: transparent;
+  color: var(--app-text-primary);
+  font-size: 16px;
+  line-height: 1.55;
+  resize: none;
+  box-shadow: none;
+}
+
+.chat-composer-input.ant-input:hover,
+.chat-composer-input.ant-input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-composer-input.ant-input::placeholder {
+  color: color-mix(in srgb, var(--app-text-secondary) 82%, transparent);
+}
+
+.chat-composer-input.ant-input:disabled {
+  background: transparent;
+  color: var(--app-text-secondary);
+  cursor: not-allowed;
+}
+
+.chat-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.chat-composer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--app-text-primary);
+  color: var(--app-bg);
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.chat-composer-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.chat-composer-action:disabled {
+  background: color-mix(in srgb, var(--app-text-secondary) 30%, transparent);
+  color: color-mix(in srgb, var(--app-text-primary) 44%, transparent);
+  cursor: not-allowed;
+}
+
+.chat-composer-action-active {
+  background: var(--app-text-primary);
+  color: var(--app-bg);
+}
+
+.chat-composer-stop-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
 .chat-markdown {
   overflow-wrap: anywhere;
 }

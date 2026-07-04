@@ -1,5 +1,5 @@
-import { Button, Flex, Input } from 'antd'
-import { SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Input } from 'antd'
+import { ArrowUp } from 'lucide-react'
 
 export default function MessageComposer({
   input,
@@ -14,30 +14,49 @@ export default function MessageComposer({
   onSendMessage: () => void
   onStopStreaming: () => void
 }) {
+  const canSend = input.trim().length > 0 && !streaming
+
   return (
-    <Flex gap={8} style={{ marginTop: 12 }}>
+    <div className="chat-composer">
       <Input.TextArea
         value={input}
         disabled={streaming}
-        autoSize={{ minRows: 2, maxRows: 5 }}
-        placeholder="输入消息"
+        autoSize={{ minRows: 1, maxRows: 8 }}
+        className="chat-composer-input"
+        placeholder="有问题，尽管问"
         onChange={(event) => onInputChange(event.target.value)}
         onPressEnter={(event) => {
           if (!event.shiftKey) {
             event.preventDefault()
-            onSendMessage()
+            if (canSend) {
+              onSendMessage()
+            }
           }
         }}
       />
-      {streaming ? (
-        <Button danger icon={<StopOutlined />} onClick={onStopStreaming}>
-          停止
-        </Button>
-      ) : (
-        <Button type="primary" icon={<SendOutlined />} onClick={onSendMessage}>
-          发送
-        </Button>
-      )}
-    </Flex>
+      <div className="chat-composer-toolbar">
+        <div />
+        {streaming ? (
+          <button
+            type="button"
+            className="chat-composer-action chat-composer-action-active"
+            aria-label="停止生成"
+            onClick={onStopStreaming}
+          >
+            <span className="chat-composer-stop-icon" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="chat-composer-action"
+            aria-label="发送消息"
+            disabled={!canSend}
+            onClick={onSendMessage}
+          >
+            <ArrowUp size={20} strokeWidth={2.4} />
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
