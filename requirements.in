@@ -19,3 +19,5 @@ httpx[socks]
 types-python-jose
 alembic
 openai
+anthropic
+google-genai

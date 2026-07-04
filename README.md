@@ -180,9 +180,20 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:8000/api/oauth/google/callback
 GOOGLE_SCOPE=openid email profile
 EXAMPLE_EXTERNAL_API_BASE_URL=
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=openai_chat
+LLM_MODEL=
+LLM_OPENAI_API_KEY=
+LLM_OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_OPENAI_MODEL=gpt-4o-mini
+LLM_DEEPSEEK_API_KEY=
+LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
+LLM_DEEPSEEK_MODEL=deepseek-reasoner
+LLM_DEEPSEEK_THINKING_ENABLED=true
+LLM_DEEPSEEK_REASONING_EFFORT=
+LLM_ANTHROPIC_API_KEY=
+LLM_ANTHROPIC_MODEL=claude-sonnet-4-5
+LLM_GOOGLE_API_KEY=
+LLM_GOOGLE_MODEL=gemini-2.5-flash
 TWO_FACTOR_CHALLENGE_TTL_MINUTES=5
 TWO_FACTOR_SETUP_TTL_MINUTES=10
 TWO_FACTOR_ISSUER_NAME=Fullstack Template
@@ -204,7 +215,7 @@ TWO_FACTOR_MAX_VERIFY_ATTEMPTS=5
 - `APP_DOMAIN` 用于生成对外访问链接，例如密码重置链接
 - `GITHUB_*` / `GOOGLE_*` 用于第三方 OAuth App 配置，callback 默认是 `/api/oauth/{provider}/callback`
 - `EXAMPLE_EXTERNAL_API_BASE_URL` 是示例外部 API real provider 的 base URL
-- `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 用于 ChatWeb 的 OpenAI-compatible Agent
+- `LLM_*` 用于 ChatWeb Agent 的模型 provider、密钥、base URL 和模型选择
 - `TWO_FACTOR_ENCRYPTION_KEY` 用于加密存储 TOTP secret，生产环境必须覆盖
 - `TWO_FACTOR_ISSUER_NAME` 会显示在 Google Authenticator、1Password 等应用中
 - `TWO_FACTOR_CHALLENGE_TTL_MINUTES` 和 `TWO_FACTOR_MAX_VERIFY_ATTEMPTS` 控制两阶段登录挑战的有效期与失败阈值

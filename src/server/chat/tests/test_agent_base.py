@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import Any
+
+import pytest
+
+from src.server.chat.agent.base import BaseAgent
+from src.server.chat.agent.contracts import (
+    LLMMessage,
+    LLMProvider,
+    LLMProviderEvent,
+    LLMToolCall,
+)
+from src.server.chat.agent.tools import AgentTool
+
+
+class FakeProvider(LLMProvider):
+    name = "fake"
+    model_id = "fake-model"
+
+    async def stream_turn(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tools: list[Any],
+        user_id: str,
+        allow_tools: bool,
+    ) -> AsyncIterator[LLMProviderEvent]:
+        if allow_tools and not any(message.role == "tool" for message in messages):
+            yield LLMProviderEvent(
+                type="reasoning_delta",
+                reasoning_content="need lookup",
+            )
+            yield LLMProviderEvent(
+                type="tool_call",
+                tool_call=LLMToolCall(
+                    id="call-1",
+                    name="lookup",
+                    arguments={"value": "abc"},
+                ),
+            )
+            yield LLMProviderEvent(
+                type="metadata",
+                provider_metadata={"vendor_item": {"id": "item-1"}},
+            )
+            return
+
+        tool_message = next(message for message in messages if message.role == "tool")
+        yield LLMProviderEvent(
+            type="content_delta",
+            content=f"done: {tool_message.content}",
+        )
+
+
+@pytest.mark.asyncio
+async def test_base_agent_awaits_async_tools_and_streams_events():
+    async def lookup(value: str) -> dict[str, str]:
+        return {"value": value}
+
+    agent = BaseAgent(
+        provider=FakeProvider(),
+        instructions="test",
+        tools=[
+            AgentTool(
+                name="lookup",
+                display_name="Lookup",
+                description="Lookup a value",
+                parameters={
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "required": ["value"],
+                    "additionalProperties": False,
+                },
+                handler=lookup,
+            )
+        ],
+    )
+
+    events = [event async for event in agent.arun("hello", user_id="u1")]
+
+    assert [event.event for event in events] == [
+        "RunReasoningContent",
+        "ToolCallStarted",
+        "ToolCallCompleted",
+        "RunContent",
+    ]
+    assert events[2].tool is not None
+    assert events[2].tool.result == {"value": "abc"}
+    assert events[3].content == 'done: {"value": "abc"}'
+
+
+@pytest.mark.asyncio
+async def test_base_agent_rejects_sync_tool_handlers():
+    def sync_handler(value: str) -> dict[str, str]:
+        return {"value": value}
+
+    agent = BaseAgent(
+        provider=FakeProvider(),
+        instructions="test",
+        tools=[
+            AgentTool(
+                name="lookup",
+                display_name="Lookup",
+                description="Lookup a value",
+                parameters={"type": "object", "properties": {}},
+                handler=sync_handler,  # type: ignore[arg-type]
+            )
+        ],
+    )
+
+    events = [event async for event in agent.arun("hello", user_id="u1")]
+
+    assert events[2].tool is not None
+    assert events[2].tool.result["error"].startswith("Invalid tool arguments:")
+

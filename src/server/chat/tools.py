@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Built-in Agent tools for ChatWeb."""
+"""Built-in async Agent tools for ChatWeb."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
+
+from .agent.tools import AgentTool
 
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "get_order_status": "查询订单状态",
 }
 
-
-@dataclass(frozen=True)
-class ChatTool:
-    spec: dict[str, Any]
-    handler: Callable[..., Any]
+ChatTool = AgentTool
 
 ORDER_DATA: dict[str, dict[str, Any]] = {
     "ORDER-8831": {
@@ -53,7 +49,7 @@ def get_tool_display_name(name: str) -> str:
     return TOOL_DISPLAY_NAMES.get(name, name)
 
 
-def get_order_status(order_id: str) -> dict[str, Any]:
+async def get_order_status(order_id: str) -> dict[str, Any]:
     """Look up a demo order by order ID and return shipping support context."""
     normalized = order_id.strip().upper()
     if normalized in ORDER_DATA:
@@ -72,28 +68,21 @@ def get_order_status(order_id: str) -> dict[str, Any]:
 def get_chat_tools() -> list[ChatTool]:
     return [
         ChatTool(
-            spec={
-                "type": "function",
-                "function": {
-                    "name": "get_order_status",
-                    "description": (
-                        "Look up a demo order by order ID and return shipping support "
-                        "context."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "order_id": {
-                                "type": "string",
-                                "description": (
-                                    "The customer order ID, for example ORDER-8831."
-                                ),
-                            },
-                        },
-                        "required": ["order_id"],
-                        "additionalProperties": False,
+            name="get_order_status",
+            display_name=TOOL_DISPLAY_NAMES["get_order_status"],
+            description=(
+                "Look up a demo order by order ID and return shipping support context."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "The customer order ID, for example ORDER-8831.",
                     },
                 },
+                "required": ["order_id"],
+                "additionalProperties": False,
             },
             handler=get_order_status,
         )
