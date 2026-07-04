@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.server.chat import service
-from src.server.chat.models import ChatMessage, ChatSession
+from src.server.auth.models import User
+from src.server.chat.models import ChatMessage, ChatSession, ChatSessionShare
 
 
 def _login_admin(test_client):
@@ -264,6 +265,134 @@ def test_regenerate_replaces_latest_assistant_branch(
     switched_messages = switch_resp.json()["messages"]
     assert [message["content"] for message in switched_messages] == ["请回答", "第一次回复"]
     assert switched_messages[1]["next_version_message_id"] == active_messages[1]["id"]
+
+
+def test_create_share_publicly_previews_immutable_snapshot(
+    test_client, test_db_session, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="第一次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "分享这个会话"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    session_id = _parse_sse(create_resp.text)[-1]["data"]["session"]["id"]
+
+    share_resp = test_client.post(f"/api/chat/sessions/{session_id}/shares", headers=headers)
+    assert share_resp.status_code == HTTPStatus.OK, share_resp.text
+    share = share_resp.json()
+    assert share["token"]
+    assert "." in share["token"]
+    assert len(share["token"].split(".", 1)[1]) == 16
+    assert share["share_url"].endswith(f"/shared/chat/{share['token']}")
+    assert share["message_count"] == 2
+
+    preview_resp = test_client.get(f"/api/chat/shares/{share['token']}")
+    assert preview_resp.status_code == HTTPStatus.OK, preview_resp.text
+    preview = preview_resp.json()
+    assert preview["title"] == "分享这个会话"
+    assert [message["content"] for message in preview["messages"]] == [
+        "分享这个会话",
+        "第一次回复",
+    ]
+
+    async def second_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="第二次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", second_agent)
+    regenerate_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/regenerate-stream",
+        headers=headers,
+    )
+    assert regenerate_resp.status_code == HTTPStatus.OK, regenerate_resp.text
+
+    immutable_preview_resp = test_client.get(f"/api/chat/shares/{share['token']}")
+    assert immutable_preview_resp.status_code == HTTPStatus.OK, immutable_preview_resp.text
+    immutable_preview = immutable_preview_resp.json()
+    assert [message["content"] for message in immutable_preview["messages"]] == [
+        "分享这个会话",
+        "第一次回复",
+    ]
+    assert test_db_session.query(ChatSessionShare).count() == 1
+
+    delete_resp = test_client.delete(f"/api/chat/sessions/{session_id}", headers=headers)
+    assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text
+    invalidated_preview_resp = test_client.get(f"/api/chat/shares/{share['token']}")
+    assert invalidated_preview_resp.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_shared_session_rejects_tampered_signature(
+    test_client, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def fake_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", fake_agent)
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "签名测试"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    session_id = _parse_sse(create_resp.text)[-1]["data"]["session"]["id"]
+    share_resp = test_client.post(f"/api/chat/sessions/{session_id}/shares", headers=headers)
+    assert share_resp.status_code == HTTPStatus.OK, share_resp.text
+
+    share_id_segment, signature = share_resp.json()["token"].split(".", 1)
+    replacement = "A" if signature[-1] != "A" else "B"
+    tampered_token = f"{share_id_segment}.{signature[:-1]}{replacement}"
+    tampered_resp = test_client.get(f"/api/chat/shares/{tampered_token}")
+    assert tampered_resp.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_share_requires_session_owner(
+    test_client, test_db_session, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def fake_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", fake_agent)
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "私有会话"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    session_id = _parse_sse(create_resp.text)[-1]["data"]["session"]["id"]
+
+    user = User(username="member", email="member@example.com", name="普通用户")
+    user.set_password("member123")
+    test_db_session.add(user)
+    test_db_session.commit()
+    member_login_resp = test_client.post(
+        "/api/auth/login",
+        json={"username": "member", "password": "member123"},
+    )
+    assert member_login_resp.status_code == HTTPStatus.OK, member_login_resp.text
+    member_headers = {
+        "Authorization": f"Bearer {member_login_resp.json()['access_token']}",
+    }
+
+    forbidden_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/shares",
+        headers=member_headers,
+    )
+    assert forbidden_resp.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_shared_session_rejects_invalid_token(test_client, init_test_database):
+    resp = test_client.get("/api/chat/shares/not-a-valid-token")
+    assert resp.status_code == HTTPStatus.NOT_FOUND
 
 
 def test_chat_requires_authentication(test_client):

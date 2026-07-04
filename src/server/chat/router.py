@@ -18,11 +18,28 @@ from .dao import ChatDAO
 from .schemas import (
     ChatSessionDetailOut,
     ChatSessionOut,
+    ChatSessionShareOut,
     ChatSessionUpdate,
     ChatStreamRequest,
+    SharedChatSessionOut,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["ChatWeb"])
+
+
+@router.get(
+    "/shares/{token}",
+    response_model=SharedChatSessionOut,
+    summary="预览分享的聊天会话快照",
+)
+async def get_shared_session(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    def _get():
+        return service.get_shared_session(db, token=token)
+
+    return await run_in_thread(_get)
 
 
 @router.get("/sessions", response_model=list[ChatSessionOut], summary="列出聊天会话")
@@ -107,6 +124,26 @@ async def delete_session(
             )
 
     return await run_in_thread(_delete)
+
+
+@router.post(
+    "/sessions/{session_id}/shares",
+    response_model=ChatSessionShareOut,
+    summary="创建聊天会话分享快照",
+)
+async def create_session_share(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    def _create():
+        return service.create_session_share(
+            db,
+            current_user=current_user,
+            session_id=session_id,
+        )
+
+    return await run_in_thread(_create)
 
 
 @router.post("/messages/{message_id}/edit-stream", summary="编辑用户消息并重新生成")

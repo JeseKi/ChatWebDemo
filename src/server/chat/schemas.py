@@ -68,3 +68,21 @@ class ChatSessionOut(BaseModel):
 
 class ChatSessionDetailOut(ChatSessionOut):
     messages: list[ChatMessageOut]
+
+
+class ChatSessionShareOut(BaseModel):
+    token: str
+    share_url: str
+    title: str
+    message_count: int
+    created_at: datetime
+
+
+class SharedChatSessionOut(BaseModel):
+    token: str
+    title: str
+    source_session_id: str = Field(..., pattern=CHAT_SESSION_ID_PATTERN)
+    source_active_leaf_message_id: int | None = None
+    message_count: int
+    created_at: datetime
+    messages: list[ChatMessageOut]

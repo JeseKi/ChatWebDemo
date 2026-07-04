@@ -1,11 +1,11 @@
-import { Button, Flex, Input, Space, Tag, Tooltip, Typography, theme } from 'antd'
+import { Button, Flex, Input, Space, Tooltip, Typography, theme } from 'antd'
 import {
   CheckOutlined,
   EditOutlined,
   ReloadOutlined,
-  ToolOutlined,
 } from '@ant-design/icons'
-import type { AssistantMessagePart, ChatMessage, ToolCallTrace } from '../../../lib/chat'
+import type { AssistantMessagePart, ChatMessage } from '../../../lib/chat'
+import AssistantToolTrace from './AssistantToolTrace'
 import { STREAMING_MESSAGE_ID } from './constants'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
@@ -195,7 +195,7 @@ function AssistantMessageView({
           part.type === 'output' ? (
             <MarkdownOutput key={part.id} content={part.content} />
           ) : (
-            <AssistantTool key={part.id} toolCall={part.tool_call} />
+            <AssistantToolTrace key={part.id} toolCall={part.tool_call} />
           ),
         )
       )}
@@ -224,31 +224,6 @@ function AssistantMessageView({
   )
 }
 
-function AssistantTool({ toolCall }: { toolCall: ToolCallTrace }) {
-  const { token } = theme.useToken()
-  const color = toolCall.status === 'completed' ? 'success' : 'processing'
-  return (
-    <div
-      style={{
-        border: `1px solid ${token.colorBorder}`,
-        borderRadius: 6,
-        padding: 10,
-        background: token.colorBgElevated,
-      }}
-    >
-      <Space size={8} wrap>
-        <ToolOutlined />
-        <Typography.Text strong>{toolCall.name}</Typography.Text>
-        <Tag color={color}>{toolCall.status}</Tag>
-      </Space>
-      <pre style={preStyle}>{JSON.stringify(toolCall.arguments, null, 2)}</pre>
-      {toolCall.status === 'completed' && (
-        <pre style={preStyle}>{JSON.stringify(toolCall.result, null, 2)}</pre>
-      )}
-    </div>
-  )
-}
-
 function fallbackAssistantParts(message: ChatMessage): AssistantMessagePart[] {
   if (message.role !== 'assistant') {
     return []
@@ -262,10 +237,3 @@ function fallbackAssistantParts(message: ChatMessage): AssistantMessagePart[] {
   }
   return parts
 }
-
-const preStyle = {
-  margin: '8px 0 0',
-  whiteSpace: 'pre-wrap',
-  overflowWrap: 'anywhere',
-  fontSize: 12,
-} as const

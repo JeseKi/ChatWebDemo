@@ -55,3 +55,20 @@ class ChatMessage(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+class ChatSessionShare(Base):
+    __tablename__ = "chat_session_shares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    source_session_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source_active_leaf_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )

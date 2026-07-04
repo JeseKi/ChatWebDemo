@@ -3,6 +3,7 @@ import MainLayout from './components/layout/MainLayout'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import ExamplePage from './pages/dashboard/ExamplePage'
 import ChatPage from './pages/dashboard/ChatPage'
+import SharedChatPage from './pages/dashboard/ChatPage/SharedChatPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import SecurityPage from './pages/profile/SecurityPage'
 import DevicesPage from './pages/profile/DevicesPage'
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
             <Route path="/profile/password-change/:token" element={<ConfirmPasswordChangePage />} />
+            <Route path="/shared/chat/:token" element={<SharedChatPage />} />
             <Route
               path="/oauth/authorize"
               element={

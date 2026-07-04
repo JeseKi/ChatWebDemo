@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App } from 'antd'
 import * as chatApi from '../../../lib/chat'
-import type { ChatMessage, ChatSession, ChatStreamEvent } from '../../../lib/chat'
+import type {
+  ChatMessage,
+  ChatSession,
+  ChatSessionShare,
+  ChatStreamEvent,
+} from '../../../lib/chat'
 import {
   appendAssistantDelta,
   appendOrReplaceMessage,
@@ -20,6 +25,9 @@ export function useChatPageController() {
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [streaming, setStreaming] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [activeShare, setActiveShare] = useState<ChatSessionShare | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
@@ -253,14 +261,34 @@ export function useChatPageController() {
     )
   }
 
+  const shareActiveSession = async () => {
+    if (!activeSessionId || streaming || loadingMessages || sharing) return
+    setShareModalOpen(true)
+    setActiveShare(null)
+    setSharing(true)
+    try {
+      const share = await chatApi.createChatSessionShare(activeSessionId)
+      setActiveShare(share)
+    } catch (error) {
+      toast.error(resolveErrorMessage(error))
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  const closeShareModal = () => {
+    setShareModalOpen(false)
+  }
+
   return {
     sessions, activeSessionId, activeSession, messages, input,
-    loadingSessions, loadingMessages, streaming,
+    loadingSessions, loadingMessages, streaming, sharing, shareModalOpen, activeShare,
     editingSessionId, editingTitle, editingMessageId, editingMessageContent,
     mutatingSessionId, transcriptRef, setInput, setEditingTitle,
     setEditingMessageContent, startNewSession, loadSession, startEditingSession,
     cancelEditingSession, saveSessionTitle, deleteSession, stopStreaming,
     startEditingMessage, cancelEditingMessage, saveEditedMessage,
     regenerateLatestMessage, activateMessageVersion, sendMessage,
+    shareActiveSession, closeShareModal,
   }
 }

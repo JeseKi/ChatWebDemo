@@ -40,6 +40,30 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "chat_session_shares",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("owner_user_id", sa.Integer(), nullable=False),
+        sa.Column("source_session_id", sa.String(length=32), nullable=False),
+        sa.Column("source_active_leaf_message_id", sa.Integer(), nullable=True),
+        sa.Column("title", sa.String(length=160), nullable=False),
+        sa.Column("snapshot_json", sa.Text(), nullable=False),
+        sa.Column("message_count", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_chat_session_shares_owner_user_id"),
+        "chat_session_shares",
+        ["owner_user_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_chat_session_shares_source_session_id"),
+        "chat_session_shares",
+        ["source_session_id"],
+        unique=False,
+    )
+    op.create_table(
         "chat_messages",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("session_id", sa.String(length=32), nullable=False),
@@ -415,6 +439,15 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_chat_messages_session_id"), table_name="chat_messages")
     op.drop_index(op.f("ix_chat_messages_parent_message_id"), table_name="chat_messages")
     op.drop_table("chat_messages")
+    op.drop_index(
+        op.f("ix_chat_session_shares_source_session_id"),
+        table_name="chat_session_shares",
+    )
+    op.drop_index(
+        op.f("ix_chat_session_shares_owner_user_id"),
+        table_name="chat_session_shares",
+    )
+    op.drop_table("chat_session_shares")
     op.drop_index(op.f("ix_chat_sessions_user_id"), table_name="chat_sessions")
     op.drop_table("chat_sessions")
     op.drop_index(op.f("ix_user_backup_codes_user_id"), table_name="user_backup_codes")

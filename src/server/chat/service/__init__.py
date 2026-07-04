@@ -31,6 +31,7 @@ from .serializers import (
     serialize_session,
 )
 from .sessions import activate_message_version, get_session_detail, resolve_or_create_session
+from .share import create_session_share, get_shared_session
 
 __all__ = [
     "DEFAULT_MODEL_ID",
@@ -41,6 +42,8 @@ __all__ = [
     "build_chat_agent",
     "build_fallback_parts",
     "build_version_info",
+    "create_session_share",
+    "get_shared_session",
     "get_session_detail",
     "is_content_event",
     "is_event",

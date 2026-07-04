@@ -1,5 +1,7 @@
-import { Flex, Spin, Tag, Typography } from 'antd'
+import { Button, Flex, Spin, Tag, Tooltip, Typography } from 'antd'
+import { ShareAltOutlined } from '@ant-design/icons'
 import MessageComposer from './MessageComposer'
+import ShareSessionModal from './ShareSessionModal'
 import SessionSidebar from './SessionSidebar'
 import TranscriptPanel from './TranscriptPanel'
 import { useChatPageController } from './useChatPageController'
@@ -26,15 +28,25 @@ export default function ChatPage() {
       />
 
       <Flex vertical flex={1} style={{ minWidth: 0 }}>
-        <Flex align="center" justify="space-between" style={{ marginBottom: 12 }}>
+        <Flex align="center" justify="space-between" gap={12} style={{ marginBottom: 12 }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {chat.activeSession?.title ?? '新对话'}
           </Typography.Title>
-          {chat.streaming && (
-            <Tag color="processing" icon={<Spin size="small" />}>
-              生成中
-            </Tag>
-          )}
+          <Flex align="center" gap={8}>
+            {chat.streaming && (
+              <Tag color="processing" icon={<Spin size="small" />}>
+                生成中
+              </Tag>
+            )}
+            <Tooltip title="分享当前会话">
+              <Button
+                icon={<ShareAltOutlined />}
+                loading={chat.sharing}
+                disabled={!chat.activeSessionId || chat.streaming || chat.loadingMessages}
+                onClick={() => void chat.shareActiveSession()}
+              />
+            </Tooltip>
+          </Flex>
         </Flex>
 
         <TranscriptPanel
@@ -60,6 +72,14 @@ export default function ChatPage() {
           onStopStreaming={chat.stopStreaming}
         />
       </Flex>
+
+      <ShareSessionModal
+        open={chat.shareModalOpen}
+        loading={chat.sharing}
+        share={chat.activeShare}
+        messages={chat.messages}
+        onClose={chat.closeShareModal}
+      />
     </Flex>
   )
 }

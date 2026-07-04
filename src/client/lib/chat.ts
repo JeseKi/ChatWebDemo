@@ -56,6 +56,24 @@ export interface ChatSessionDetail extends ChatSession {
   messages: ChatMessage[]
 }
 
+export interface ChatSessionShare {
+  token: string
+  share_url: string
+  title: string
+  message_count: number
+  created_at: string
+}
+
+export interface SharedChatSession {
+  token: string
+  title: string
+  source_session_id: string
+  source_active_leaf_message_id: number | null
+  message_count: number
+  created_at: string
+  messages: ChatMessage[]
+}
+
 export type ChatStreamEvent =
   | { type: 'session_ready'; session: ChatSession }
   | { type: 'branch_reset'; parent_message_id: number | null; message_id?: number }
@@ -86,6 +104,16 @@ export async function updateChatSessionTitle(
 
 export async function deleteChatSession(sessionId: string): Promise<void> {
   await api.delete(`/chat/sessions/${sessionId}`)
+}
+
+export async function createChatSessionShare(sessionId: string): Promise<ChatSessionShare> {
+  const { data } = await api.post<ChatSessionShare>(`/chat/sessions/${sessionId}/shares`)
+  return data
+}
+
+export async function getSharedChatSession(token: string): Promise<SharedChatSession> {
+  const { data } = await api.get<SharedChatSession>(`/chat/shares/${token}`)
+  return data
 }
 
 export async function streamChatMessage(params: {

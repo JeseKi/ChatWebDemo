@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ChatWeb DAO."""
+"""ChatWeb conversation DAO."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.server.dao.dao_base import BaseDAO
 
-from .models import ChatMessage, ChatSession
+from ..models import ChatMessage, ChatSession
 
 SESSION_ID_LENGTH = 32
 SESSION_ID_ALPHABET = string.ascii_letters + string.digits
