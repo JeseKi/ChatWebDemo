@@ -63,6 +63,31 @@ class ChatDAO(BaseDAO):
             .all()
         )
 
+    def update_session_title(
+        self, *, session_id: str, user_id: int, title: str
+    ) -> ChatSession | None:
+        session = self.get_session(session_id=session_id, user_id=user_id)
+        if not session:
+            return None
+        session.title = title
+        session.updated_at = datetime.now(timezone.utc)
+        self.db_session.commit()
+        self.db_session.refresh(session)
+        return session
+
+    def delete_session(self, *, session_id: str, user_id: int) -> bool:
+        session = self.get_session(session_id=session_id, user_id=user_id)
+        if not session:
+            return False
+        (
+            self.db_session.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id, ChatMessage.user_id == user_id)
+            .delete(synchronize_session=False)
+        )
+        self.db_session.delete(session)
+        self.db_session.commit()
+        return True
+
     def append_message(
         self,
         *,
@@ -127,7 +152,6 @@ def _dump_json_list(items: list[dict[str, Any]] | None) -> str | None:
     if not items:
         return None
     return json.dumps(items, ensure_ascii=False)
-
 
 
 def _generate_session_id() -> str:

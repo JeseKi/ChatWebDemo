@@ -7,6 +7,7 @@ import {
   Flex,
   Input,
   List,
+  Popconfirm,
   Space,
   Spin,
   Tag,
@@ -20,6 +21,10 @@ import {
   SendOutlined,
   StopOutlined,
   ToolOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  CheckOutlined,
+  CloseOutlined,
 } from '@ant-design/icons'
 import * as chatApi from '../../../lib/chat'
 import type {
@@ -42,6 +47,9 @@ export default function ChatPage() {
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [streaming, setStreaming] = useState(false)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const [mutatingSessionId, setMutatingSessionId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
 
@@ -101,6 +109,67 @@ export default function ChatPage() {
     setActiveSessionId(null)
     setMessages([])
     setInput('')
+    setEditingSessionId(null)
+    setEditingTitle('')
+  }
+
+  const startEditingSession = (session: ChatSession) => {
+    setEditingSessionId(session.id)
+    setEditingTitle(session.title)
+  }
+
+  const cancelEditingSession = () => {
+    setEditingSessionId(null)
+    setEditingTitle('')
+  }
+
+  const saveSessionTitle = async (sessionId: string) => {
+    const title = editingTitle.trim()
+    if (!title) {
+      toast.error('会话名称不能为空')
+      return
+    }
+    setMutatingSessionId(sessionId)
+    try {
+      const updated = await chatApi.updateChatSessionTitle(sessionId, title)
+      upsertSession(updated)
+      setEditingSessionId(null)
+      setEditingTitle('')
+      toast.success('会话名称已更新')
+    } catch (error) {
+      toast.error(resolveErrorMessage(error))
+    } finally {
+      setMutatingSessionId(null)
+    }
+  }
+
+  const deleteSession = async (sessionId: string) => {
+    setMutatingSessionId(sessionId)
+    try {
+      await chatApi.deleteChatSession(sessionId)
+      let nextActiveSessionId: string | null = null
+      setSessions((current) => {
+        const next = current.filter((session) => session.id !== sessionId)
+        nextActiveSessionId = next[0]?.id ?? null
+        return next
+      })
+      if (activeSessionId === sessionId) {
+        if (nextActiveSessionId) {
+          await loadSession(nextActiveSessionId)
+        } else {
+          setActiveSessionId(null)
+          setMessages([])
+        }
+      }
+      if (editingSessionId === sessionId) {
+        cancelEditingSession()
+      }
+      toast.success('会话已删除')
+    } catch (error) {
+      toast.error(resolveErrorMessage(error))
+    } finally {
+      setMutatingSessionId(null)
+    }
   }
 
   const stopStreaming = () => {
@@ -280,7 +349,11 @@ export default function ChatPage() {
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对话" /> }}
             renderItem={(session) => (
               <List.Item
-                onClick={() => void loadSession(session.id)}
+                onClick={() => {
+                  if (editingSessionId !== session.id) {
+                    void loadSession(session.id)
+                  }
+                }}
                 style={{
                   cursor: 'pointer',
                   paddingInline: 8,
@@ -290,7 +363,71 @@ export default function ChatPage() {
               >
                 <List.Item.Meta
                   avatar={<MessageOutlined style={{ color: token.colorPrimary }} />}
-                  title={<Typography.Text ellipsis>{session.title}</Typography.Text>}
+                  title={
+                    editingSessionId === session.id ? (
+                      <Flex gap={4} onClick={(event) => event.stopPropagation()}>
+                        <Input
+                          size="small"
+                          value={editingTitle}
+                          autoFocus
+                          maxLength={160}
+                          onChange={(event) => setEditingTitle(event.target.value)}
+                          onPressEnter={() => void saveSessionTitle(session.id)}
+                        />
+                        <Tooltip title="保存">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<CheckOutlined />}
+                            loading={mutatingSessionId === session.id}
+                            onClick={() => void saveSessionTitle(session.id)}
+                          />
+                        </Tooltip>
+                        <Tooltip title="取消">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<CloseOutlined />}
+                            onClick={cancelEditingSession}
+                          />
+                        </Tooltip>
+                      </Flex>
+                    ) : (
+                      <Flex align="center" justify="space-between" gap={8}>
+                        <Typography.Text ellipsis style={{ flex: 1 }}>
+                          {session.title}
+                        </Typography.Text>
+                        <Space size={2} onClick={(event) => event.stopPropagation()}>
+                          <Tooltip title="重命名">
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<EditOutlined />}
+                              onClick={() => startEditingSession(session)}
+                            />
+                          </Tooltip>
+                          <Popconfirm
+                            title="删除会话"
+                            description="该会话和消息记录会被删除。"
+                            okText="删除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() => void deleteSession(session.id)}
+                          >
+                            <Tooltip title="删除">
+                              <Button
+                                size="small"
+                                type="text"
+                                danger
+                                icon={<DeleteOutlined />}
+                                loading={mutatingSessionId === session.id}
+                              />
+                            </Tooltip>
+                          </Popconfirm>
+                        </Space>
+                      </Flex>
+                    )
+                  }
                   description={new Date(session.updated_at).toLocaleString()}
                 />
               </List.Item>

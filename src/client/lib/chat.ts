@@ -67,6 +67,18 @@ export async function getChatSession(sessionId: string): Promise<ChatSessionDeta
   return data
 }
 
+export async function updateChatSessionTitle(
+  sessionId: string,
+  title: string,
+): Promise<ChatSession> {
+  const { data } = await api.patch<ChatSession>(`/chat/sessions/${sessionId}`, { title })
+  return data
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await api.delete(`/chat/sessions/${sessionId}`)
+}
+
 export async function streamChatMessage(params: {
   sessionId?: string | null
   message: string

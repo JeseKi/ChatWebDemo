@@ -19,6 +19,10 @@ class ChatStreamRequest(BaseModel):
     session_id: str | None = Field(default=None, pattern=CHAT_SESSION_ID_PATTERN)
 
 
+class ChatSessionUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=160)
+
+
 class ToolCallTrace(BaseModel):
     id: str
     name: str

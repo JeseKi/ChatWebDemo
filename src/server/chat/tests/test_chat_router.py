@@ -102,6 +102,45 @@ def test_stream_chat_persists_messages_and_tool_calls(
     assert list_resp.json()[0]["id"] == session_id
 
 
+def test_update_and_delete_chat_session(test_client, init_test_database, monkeypatch):
+    headers = _login_admin(test_client)
+
+    async def fake_stream_agent_events(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="你好")
+
+    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "初始会话名称"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    session_id = _parse_sse(create_resp.text)[-1]["data"]["session"]["id"]
+
+    update_resp = test_client.patch(
+        f"/api/chat/sessions/{session_id}",
+        json={"title": "  客服订单查询  "},
+        headers=headers,
+    )
+    assert update_resp.status_code == HTTPStatus.OK, update_resp.text
+    assert update_resp.json()["title"] == "客服订单查询"
+
+    list_resp = test_client.get("/api/chat/sessions", headers=headers)
+    assert list_resp.status_code == HTTPStatus.OK, list_resp.text
+    assert list_resp.json()[0]["title"] == "客服订单查询"
+
+    delete_resp = test_client.delete(f"/api/chat/sessions/{session_id}", headers=headers)
+    assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text
+
+    detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
+    assert detail_resp.status_code == HTTPStatus.NOT_FOUND
+
+    list_after_delete_resp = test_client.get("/api/chat/sessions", headers=headers)
+    assert list_after_delete_resp.status_code == HTTPStatus.OK, list_after_delete_resp.text
+    assert list_after_delete_resp.json() == []
+
+
 def test_chat_requires_authentication(test_client):
     resp = test_client.get("/api/chat/sessions")
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
