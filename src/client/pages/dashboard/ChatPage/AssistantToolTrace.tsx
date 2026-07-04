@@ -1,5 +1,5 @@
 import { Button, Flex, Tag, Typography, theme } from 'antd'
-import { DownOutlined, RightOutlined } from '@ant-design/icons'
+import { RightOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ToolCallTrace, ToolCallStatus } from '../../../lib/chat'
@@ -37,7 +37,7 @@ export default function AssistantToolTrace({ toolCall }: { toolCall: ToolCallTra
         }}
       >
         <Flex align="center" gap={8} wrap="wrap">
-          {toolOpen ? <DownOutlined /> : <RightOutlined />}
+          <ChevronIcon open={toolOpen} />
           <span aria-hidden="true" style={{ lineHeight: 1 }}>
             🛠
           </span>
@@ -50,7 +50,7 @@ export default function AssistantToolTrace({ toolCall }: { toolCall: ToolCallTra
         </Flex>
       </button>
 
-      {toolOpen && (
+      <AnimatedCollapse open={toolOpen}>
         <Flex
           vertical
           gap={8}
@@ -81,7 +81,7 @@ export default function AssistantToolTrace({ toolCall }: { toolCall: ToolCallTra
             )}
           </ToolTraceSection>
         </Flex>
-      )}
+      </AnimatedCollapse>
     </div>
   )
 }
@@ -113,7 +113,7 @@ function ToolTraceSection({
         block
         type="text"
         size="small"
-        icon={open ? <DownOutlined /> : <RightOutlined />}
+        icon={<ChevronIcon open={open} />}
         aria-expanded={open}
         onClick={onToggle}
         style={{
@@ -125,7 +125,7 @@ function ToolTraceSection({
       >
         {title}
       </Button>
-      {open && (
+      <AnimatedCollapse open={open}>
         <div
           style={{
             maxHeight,
@@ -136,8 +136,41 @@ function ToolTraceSection({
         >
           {children}
         </div>
-      )}
+      </AnimatedCollapse>
     </div>
+  )
+}
+
+function AnimatedCollapse({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      aria-hidden={!open}
+      style={{
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        opacity: open ? 1 : 0,
+        overflow: 'hidden',
+        pointerEvents: open ? undefined : 'none',
+        transition: `grid-template-rows 180ms ease, opacity 160ms ease, visibility 0s linear ${
+          open ? '0s' : '180ms'
+        }`,
+        visibility: open ? 'visible' : 'hidden',
+      }}
+    >
+      <div style={{ minHeight: 0, overflow: 'hidden' }}>{children}</div>
+    </div>
+  )
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <RightOutlined
+      style={{
+        fontSize: 12,
+        transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+        transition: 'transform 180ms ease',
+      }}
+    />
   )
 }
 

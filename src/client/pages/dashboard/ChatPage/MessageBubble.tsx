@@ -45,6 +45,7 @@ export default function MessageBubble({
     <Flex justify={isUser ? 'flex-end' : 'flex-start'}>
       <div
         style={{
+          width: isUser && isEditing ? '78%' : undefined,
           maxWidth: '78%',
           borderRadius: 8,
           padding: '10px 12px',
@@ -99,10 +100,12 @@ function UserMessageEditor({
   onSaveEditedMessage: (messageId: number) => Promise<void>
 }) {
   return (
-    <Flex vertical gap={8}>
+    <Flex vertical gap={8} style={{ width: '100%' }}>
       <Input.TextArea
         value={editingMessageContent}
         autoSize={{ minRows: 2, maxRows: 8 }}
+        autoFocus
+        style={{ width: '100%' }}
         onChange={(event) => onEditingMessageContentChange(event.target.value)}
         onPressEnter={(event) => {
           if (!event.shiftKey) {
