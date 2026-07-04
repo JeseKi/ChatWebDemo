@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from ..schemas import ToolCallTrace
+from ..tools import get_tool_display_name
 
 
 def sse_event(event: str, payload: dict[str, Any]) -> str:
@@ -47,6 +48,7 @@ def tool_call_from_event(
     payload = ToolCallTrace(
         id=fallback_id,
         name=str(name),
+        display_name=get_tool_display_name(str(name)),
         arguments=arguments,
         result=result,
         status=status_value,  # type: ignore[arg-type]

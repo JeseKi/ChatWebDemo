@@ -7,6 +7,7 @@ from typing import Any
 
 from ..dao import ChatDAO, parse_message_parts, parse_tool_calls
 from ..models import ChatMessage, ChatSession
+from ..tools import get_tool_display_name
 
 
 def serialize_session(session: ChatSession) -> dict[str, Any]:
@@ -20,8 +21,8 @@ def serialize_session(session: ChatSession) -> dict[str, Any]:
 
 
 def serialize_message(message: ChatMessage, dao: ChatDAO | None = None) -> dict[str, Any]:
-    tool_calls = parse_tool_calls(message.tool_calls_json)
-    parts = parse_message_parts(message.parts_json)
+    tool_calls = enrich_tool_calls(parse_tool_calls(message.tool_calls_json))
+    parts = enrich_message_parts(parse_message_parts(message.parts_json))
     version_info = build_version_info(message, dao)
     return {
         "id": message.id,
@@ -54,6 +55,29 @@ def build_fallback_parts(
             }
         )
     return parts
+
+
+def enrich_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [enrich_tool_call(tool_call) for tool_call in tool_calls]
+
+
+def enrich_message_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched_parts: list[dict[str, Any]] = []
+    for part in parts:
+        enriched = dict(part)
+        tool_call = enriched.get("tool_call")
+        if isinstance(tool_call, dict):
+            enriched["tool_call"] = enrich_tool_call(tool_call)
+        enriched_parts.append(enriched)
+    return enriched_parts
+
+
+def enrich_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(tool_call)
+    name = str(enriched.get("name") or "unknown_tool")
+    if not enriched.get("display_name"):
+        enriched["display_name"] = get_tool_display_name(name)
+    return enriched
 
 
 def build_version_info(message: ChatMessage, dao: ChatDAO | None) -> dict[str, int | None]:

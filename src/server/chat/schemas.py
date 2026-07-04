@@ -26,6 +26,7 @@ class ChatSessionUpdate(BaseModel):
 class ToolCallTrace(BaseModel):
     id: str
     name: str
+    display_name: str | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     result: Any = None
     status: ToolCallStatus

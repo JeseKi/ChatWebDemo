@@ -5,6 +5,10 @@ from __future__ import annotations
 
 from typing import Any
 
+TOOL_DISPLAY_NAMES: dict[str, str] = {
+    "get_order_status": "查询订单状态",
+}
+
 ORDER_DATA: dict[str, dict[str, Any]] = {
     "ORDER-8831": {
         "status": "delayed",
@@ -37,6 +41,10 @@ ORDER_DATA: dict[str, dict[str, Any]] = {
 }
 
 
+def get_tool_display_name(name: str) -> str:
+    return TOOL_DISPLAY_NAMES.get(name, name)
+
+
 def get_order_status(order_id: str) -> dict[str, Any]:
     """Look up a demo order by order ID and return shipping support context."""
     normalized = order_id.strip().upper()
@@ -55,4 +63,3 @@ def get_order_status(order_id: str) -> dict[str, Any]:
 
 def get_chat_tools() -> list[Any]:
     return [get_order_status]
-

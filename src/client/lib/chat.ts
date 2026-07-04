@@ -7,6 +7,7 @@ export type ToolCallStatus = 'running' | 'completed' | 'failed'
 export interface ToolCallTrace {
   id: string
   name: string
+  display_name?: string | null
   arguments: Record<string, unknown>
   result: unknown
   status: ToolCallStatus

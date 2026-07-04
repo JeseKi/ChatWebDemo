@@ -85,10 +85,14 @@ def test_stream_chat_persists_messages_and_tool_calls(
     done = events[-1]["data"]
     session_id = done["session"]["id"]
     assert done["message"]["content"] == "订单已延迟，预计 7 月 6 日送达。"
+    assert events[2]["data"]["tool_call"]["display_name"] == "查询订单状态"
+    assert events[3]["data"]["tool_call"]["display_name"] == "查询订单状态"
     assert done["message"]["tool_calls"][0]["name"] == "get_order_status"
+    assert done["message"]["tool_calls"][0]["display_name"] == "查询订单状态"
     assert done["message"]["tool_calls"][0]["status"] == "completed"
     assert [part["type"] for part in done["message"]["parts"]] == ["tool", "output"]
     assert done["message"]["parts"][0]["tool_call"]["name"] == "get_order_status"
+    assert done["message"]["parts"][0]["tool_call"]["display_name"] == "查询订单状态"
     assert done["message"]["parts"][1]["content"] == "订单已延迟，预计 7 月 6 日送达。"
 
     detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
@@ -96,6 +100,7 @@ def test_stream_chat_persists_messages_and_tool_calls(
     detail = detail_resp.json()
     assert detail["title"] == "查询 ORDER-8831 的状态"
     assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
+    assert detail["messages"][1]["tool_calls"][0]["display_name"] == "查询订单状态"
     assert detail["messages"][1]["tool_calls"][0]["result"]["status"] == "delayed"
     assert [part["type"] for part in detail["messages"][1]["parts"]] == ["tool", "output"]
 
