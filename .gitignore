@@ -30,6 +30,7 @@ dist-ssr
 tmp*
 *.db
 __pycache__
+sample
 
 # data
 data/*
