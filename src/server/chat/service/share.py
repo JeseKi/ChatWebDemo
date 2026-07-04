@@ -18,7 +18,7 @@ from src.server.config import global_config
 from ..dao import ChatDAO, ChatShareDAO
 from ..models import ChatSessionShare
 from ..schemas import ChatMessageOut, ChatSessionShareOut, SharedChatSessionOut
-from .serializers import serialize_message, serialize_session
+from .serializers import serialize_message
 
 SHARE_TOKEN_SIGNATURE_LENGTH = 16
 SHARE_TOKEN_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -38,10 +38,23 @@ def create_session_share(
 
     messages = dao.list_active_path(session=session)
     snapshot = {
-        "session": serialize_session(session),
         "messages": [serialize_message(message, dao) for message in messages],
     }
     snapshot_json = _dump_snapshot(snapshot)
+    existing_share = share_dao.get_session_share_by_snapshot(
+        owner_user_id=current_user.id,
+        source_session_id=session.id,
+        source_active_leaf_message_id=session.active_leaf_message_id,
+        snapshot_json=snapshot_json,
+    )
+    if existing_share:
+        token = _create_share_token(
+            share_id=existing_share.id,
+            source_session_id=existing_share.source_session_id,
+            snapshot_json=existing_share.snapshot_json,
+        )
+        return _share_out(existing_share, token=token)
+
     share = share_dao.create_session_share(
         owner_user_id=current_user.id,
         source_session_id=session.id,

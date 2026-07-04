@@ -298,6 +298,15 @@ def test_create_share_publicly_previews_immutable_snapshot(
     assert share["share_url"].endswith(f"/shared/chat/{share['token']}")
     assert share["message_count"] == 2
 
+    duplicate_share_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/shares", headers=headers
+    )
+    assert duplicate_share_resp.status_code == HTTPStatus.OK, duplicate_share_resp.text
+    duplicate_share = duplicate_share_resp.json()
+    assert duplicate_share["token"] == share["token"]
+    assert duplicate_share["share_url"] == share["share_url"]
+    assert test_db_session.query(ChatSessionShare).count() == 1
+
     preview_resp = test_client.get(f"/api/chat/shares/{share['token']}")
     assert preview_resp.status_code == HTTPStatus.OK, preview_resp.text
     preview = preview_resp.json()
@@ -325,6 +334,23 @@ def test_create_share_publicly_previews_immutable_snapshot(
         "第一次回复",
     ]
     assert test_db_session.query(ChatSessionShare).count() == 1
+
+    changed_share_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/shares", headers=headers
+    )
+    assert changed_share_resp.status_code == HTTPStatus.OK, changed_share_resp.text
+    changed_share = changed_share_resp.json()
+    assert changed_share["token"] != share["token"]
+    assert changed_share["message_count"] == 2
+    assert test_db_session.query(ChatSessionShare).count() == 2
+
+    changed_preview_resp = test_client.get(f"/api/chat/shares/{changed_share['token']}")
+    assert changed_preview_resp.status_code == HTTPStatus.OK, changed_preview_resp.text
+    changed_preview = changed_preview_resp.json()
+    assert [message["content"] for message in changed_preview["messages"]] == [
+        "分享这个会话",
+        "第二次回复",
+    ]
 
     delete_resp = test_client.delete(f"/api/chat/sessions/{session_id}", headers=headers)
     assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text

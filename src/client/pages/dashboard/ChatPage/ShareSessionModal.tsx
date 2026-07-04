@@ -1,9 +1,7 @@
-import { Empty, Flex, Input, Modal, Spin, Tag, Typography, theme } from 'antd'
+import { Empty, Flex, Input, Modal, Spin, Tag, theme } from 'antd'
 import type { ChatMessage, ChatSessionShare } from '../../../lib/chat'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
-
-const PREVIEW_MESSAGE_COUNT = 4
 
 export default function ShareSessionModal({
   open,
@@ -20,7 +18,6 @@ export default function ShareSessionModal({
 }) {
   const { token } = theme.useToken()
   const shareUrl = share ? resolveShareUrl(share.share_url) : ''
-  const previewMessages = messages.slice(0, PREVIEW_MESSAGE_COUNT)
 
   return (
     <Modal
@@ -43,17 +40,10 @@ export default function ShareSessionModal({
             background: token.colorFillQuaternary,
           }}
         >
-          {previewMessages.length === 0 ? (
+          {messages.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无消息" />
           ) : (
-            previewMessages.map((message) => (
-              <PreviewMessage key={message.id} message={message} />
-            ))
-          )}
-          {messages.length > PREVIEW_MESSAGE_COUNT && (
-            <Typography.Text type="secondary">
-              还有 {messages.length - PREVIEW_MESSAGE_COUNT} 条消息
-            </Typography.Text>
+            messages.map((message) => <PreviewMessage key={message.id} message={message} />)
           )}
         </Flex>
 
