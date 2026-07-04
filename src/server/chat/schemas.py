@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 CHAT_SESSION_ID_PATTERN = r"^[A-Za-z0-9]{32}$"
 ChatRole = Literal["user", "assistant"]
 ToolCallStatus = Literal["running", "completed", "failed"]
-AssistantPartType = Literal["output", "tool"]
+AssistantPartType = Literal["reasoning", "output", "tool"]
 
 
 class ChatStreamRequest(BaseModel):

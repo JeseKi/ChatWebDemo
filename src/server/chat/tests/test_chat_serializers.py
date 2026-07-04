@@ -39,3 +39,14 @@ def test_enrich_message_parts_adds_display_name_to_legacy_tool_parts():
 
     assert enriched[0]["tool_call"]["display_name"] == "查询订单状态"
     assert "display_name" not in parts[0]["tool_call"]
+
+
+def test_enrich_message_parts_drops_invalid_tool_parts():
+    parts = [
+        {"id": "tool-1", "type": "tool", "tool_call": None},
+        {"id": "output-1", "type": "output", "content": "回复"},
+    ]
+
+    enriched = enrich_message_parts(parts)
+
+    assert enriched == [{"id": "output-1", "type": "output", "content": "回复"}]

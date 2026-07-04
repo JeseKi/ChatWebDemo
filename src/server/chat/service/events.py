@@ -33,6 +33,17 @@ def is_content_event(event_name: str) -> bool:
     }
 
 
+def is_reasoning_event(event_name: str) -> bool:
+    return event_name in {
+        "run_reasoning_content",
+        "runreasoningcontent",
+        "reasoning_content",
+        "reasoningcontent",
+        "reasoning_delta",
+        "reasoningdelta",
+    }
+
+
 def tool_call_from_event(
     run_event: Any,
     *,
@@ -42,11 +53,12 @@ def tool_call_from_event(
     tool = getattr(run_event, "tool", None)
     name = getattr(tool, "tool_name", None) or getattr(tool, "name", None) or "unknown_tool"
     arguments = getattr(tool, "tool_args", None) or getattr(tool, "args", None) or {}
+    tool_call_id = getattr(tool, "tool_call_id", None) or fallback_id
     result = json_safe(getattr(tool, "result", None))
     if not isinstance(arguments, dict):
         arguments = {"value": arguments}
     payload = ToolCallTrace(
-        id=fallback_id,
+        id=str(tool_call_id),
         name=str(name),
         display_name=get_tool_display_name(str(name)),
         arguments=arguments,
@@ -75,6 +87,16 @@ def append_output_part(parts: list[dict[str, Any]], delta: str) -> str:
 
     part_id = f"output-{len(parts) + 1}"
     parts.append({"id": part_id, "type": "output", "content": delta})
+    return part_id
+
+
+def append_reasoning_part(parts: list[dict[str, Any]], delta: str) -> str:
+    if parts and parts[-1].get("type") == "reasoning":
+        parts[-1]["content"] = f"{parts[-1].get('content', '')}{delta}"
+        return str(parts[-1]["id"])
+
+    part_id = f"reasoning-{len(parts) + 1}"
+    parts.append({"id": part_id, "type": "reasoning", "content": delta})
     return part_id
 
 

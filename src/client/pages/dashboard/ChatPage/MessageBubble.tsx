@@ -1,10 +1,11 @@
-import { Button, Flex, Input, Space, Tooltip, Typography, theme } from 'antd'
+import { Button, Flex, Input, Skeleton, Space, Tooltip, Typography, theme } from 'antd'
 import {
   CheckOutlined,
   EditOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import type { AssistantMessagePart, ChatMessage } from '../../../lib/chat'
+import AssistantReasoningTrace from './AssistantReasoningTrace'
 import AssistantToolTrace from './AssistantToolTrace'
 import { STREAMING_MESSAGE_ID } from './constants'
 import CopyButton from './CopyButton'
@@ -192,14 +193,16 @@ function AssistantMessageView({
   return (
     <Flex vertical gap={8}>
       {assistantParts.length === 0 && message.id === STREAMING_MESSAGE_ID ? (
-        <Typography.Text> </Typography.Text>
+        <AssistantStreamingPlaceholder />
       ) : (
         assistantParts.map((part) =>
-          part.type === 'output' ? (
+          part.type === 'reasoning' ? (
+            <AssistantReasoningTrace key={part.id} content={part.content} />
+          ) : part.type === 'output' ? (
             <MarkdownOutput key={part.id} content={part.content} />
-          ) : (
+          ) : part.type === 'tool' ? (
             <AssistantToolTrace key={part.id} toolCall={part.tool_call} />
-          ),
+          ) : null,
         )
       )}
       {message.id !== STREAMING_MESSAGE_ID && (
@@ -224,6 +227,27 @@ function AssistantMessageView({
         </Space>
       )}
     </Flex>
+  )
+}
+
+function AssistantStreamingPlaceholder() {
+  return (
+    <div
+      style={{
+        width: 220,
+        maxWidth: '100%',
+        minHeight: 42,
+      }}
+    >
+      <Skeleton
+        active
+        title={false}
+        paragraph={{
+          rows: 2,
+          width: ['72%', '48%'],
+        }}
+      />
+    </div>
   )
 }
 

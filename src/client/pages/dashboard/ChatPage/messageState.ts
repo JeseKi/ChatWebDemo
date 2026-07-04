@@ -1,29 +1,64 @@
 import type { AssistantMessagePart, ChatMessage, ToolCallTrace } from '../../../lib/chat'
-import { STREAMING_MESSAGE_ID } from './constants'
+import { PENDING_USER_MESSAGE_ID, STREAMING_MESSAGE_ID } from './constants'
 
 export function appendOrReplaceMessage(
   current: ChatMessage[],
   nextMessage: ChatMessage,
 ): ChatMessage[] {
-  const exists = current.some((item) => item.id === nextMessage.id)
+  const withoutPendingUser =
+    nextMessage.role === 'user'
+      ? current.filter((item) => item.id !== PENDING_USER_MESSAGE_ID)
+      : current
+  const exists = withoutPendingUser.some((item) => item.id === nextMessage.id)
   if (exists) {
-    return current.map((item) => (item.id === nextMessage.id ? nextMessage : item))
+    return sortMessages(
+      withoutPendingUser.map((item) => (item.id === nextMessage.id ? nextMessage : item)),
+    )
   }
-  return [...current, nextMessage]
+  return sortMessages([...withoutPendingUser, nextMessage])
+}
+
+export function appendPendingUserMessage(
+  current: ChatMessage[],
+  activeSessionId: string | null,
+  content: string,
+): ChatMessage[] {
+  const withoutPending = current.filter((item) => item.id !== PENDING_USER_MESSAGE_ID)
+  return [
+    ...withoutPending,
+    {
+      id: PENDING_USER_MESSAGE_ID,
+      session_id: activeSessionId ?? '',
+      role: 'user',
+      content,
+      parent_message_id: null,
+      source_message_id: null,
+      version_index: 1,
+      version_count: 1,
+      version_position: 1,
+      previous_version_message_id: null,
+      next_version_message_id: null,
+      tool_calls: [],
+      parts: [],
+      sequence: withoutPending.length + 1,
+      created_at: new Date().toISOString(),
+    },
+  ]
 }
 
 export function resetMessageBranch(
   current: ChatMessage[],
   parentMessageId: number | null,
 ): ChatMessage[] {
+  const withoutPending = current.filter((item) => item.id !== PENDING_USER_MESSAGE_ID)
   if (parentMessageId === null) {
     return []
   }
-  const parentIndex = current.findIndex((item) => item.id === parentMessageId)
+  const parentIndex = withoutPending.findIndex((item) => item.id === parentMessageId)
   if (parentIndex < 0) {
-    return current.filter((item) => item.id !== STREAMING_MESSAGE_ID)
+    return withoutPending.filter((item) => item.id !== STREAMING_MESSAGE_ID)
   }
-  return current.slice(0, parentIndex + 1)
+  return withoutPending.slice(0, parentIndex + 1)
 }
 
 export function appendAssistantDelta(
@@ -55,6 +90,23 @@ export function appendAssistantDelta(
   ]
 }
 
+export function appendAssistantReasoningDelta(
+  current: ChatMessage[],
+  activeSessionId: string | null,
+  partId: string,
+  delta: string,
+): ChatMessage[] {
+  const withAssistant = ensureStreamingAssistant(current, activeSessionId)
+  return withAssistant.map((item) =>
+    item.id === STREAMING_MESSAGE_ID
+      ? {
+          ...item,
+          parts: appendReasoningDelta(item.parts, partId, delta),
+        }
+      : item,
+  )
+}
+
 export function upsertAssistantToolCall(
   current: ChatMessage[],
   activeSessionId: string | null,
@@ -79,10 +131,10 @@ export function replaceStreamingMessage(
 ): ChatMessage[] {
   const withoutStreaming = current.filter((item) => item.id !== STREAMING_MESSAGE_ID)
   const withoutDuplicate = withoutStreaming.filter((item) => item.id !== finalMessage.id)
-  return [...withoutDuplicate, finalMessage].sort((a, b) => a.sequence - b.sequence)
+  return sortMessages([...withoutDuplicate, finalMessage])
 }
 
-function ensureStreamingAssistant(
+export function ensureStreamingAssistant(
   current: ChatMessage[],
   activeSessionId: string | null,
 ): ChatMessage[] {
@@ -130,6 +182,10 @@ function createStreamingAssistant({
   }
 }
 
+function sortMessages(messages: ChatMessage[]): ChatMessage[] {
+  return [...messages].sort((a, b) => a.sequence - b.sequence || a.id - b.id)
+}
+
 function appendOutputDelta(
   parts: AssistantMessagePart[],
   partId: string,
@@ -144,6 +200,22 @@ function appendOutputDelta(
     )
   }
   return [...parts, { id: partId, type: 'output', content: delta }]
+}
+
+function appendReasoningDelta(
+  parts: AssistantMessagePart[],
+  partId: string,
+  delta: string,
+): AssistantMessagePart[] {
+  const existingPart = parts.find((part) => part.id === partId)
+  if (existingPart?.type === 'reasoning') {
+    return parts.map((part) =>
+      part.id === partId && part.type === 'reasoning'
+        ? { ...part, content: `${part.content}${delta}` }
+        : part,
+    )
+  }
+  return [...parts, { id: partId, type: 'reasoning', content: delta }]
 }
 
 function upsertToolCall(

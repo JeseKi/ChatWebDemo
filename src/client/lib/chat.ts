@@ -16,6 +16,12 @@ export interface ToolCallTrace {
 export type AssistantMessagePart =
   | {
       id: string
+      type: 'reasoning'
+      content: string
+      tool_call?: null
+    }
+  | {
+      id: string
       type: 'output'
       content: string
       tool_call?: null
@@ -79,6 +85,7 @@ export type ChatStreamEvent =
   | { type: 'session_ready'; session: ChatSession }
   | { type: 'branch_reset'; parent_message_id: number | null; message_id?: number }
   | { type: 'user_message'; message: ChatMessage }
+  | { type: 'reasoning_delta'; part_id: string; delta: string }
   | { type: 'content_delta'; part_id: string; delta: string }
   | { type: 'tool_call_started'; tool_call: ToolCallTrace }
   | { type: 'tool_call_completed'; tool_call: ToolCallTrace }

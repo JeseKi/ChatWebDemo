@@ -66,7 +66,9 @@ def enrich_message_parts(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for part in parts:
         enriched = dict(part)
         tool_call = enriched.get("tool_call")
-        if isinstance(tool_call, dict):
+        if enriched.get("type") == "tool":
+            if not isinstance(tool_call, dict):
+                continue
             enriched["tool_call"] = enrich_tool_call(tool_call)
         enriched_parts.append(enriched)
     return enriched_parts

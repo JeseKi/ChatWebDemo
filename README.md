@@ -204,7 +204,7 @@ TWO_FACTOR_MAX_VERIFY_ATTEMPTS=5
 - `APP_DOMAIN` 用于生成对外访问链接，例如密码重置链接
 - `GITHUB_*` / `GOOGLE_*` 用于第三方 OAuth App 配置，callback 默认是 `/api/oauth/{provider}/callback`
 - `EXAMPLE_EXTERNAL_API_BASE_URL` 是示例外部 API real provider 的 base URL
-- `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 用于 ChatWeb 的 Agno `OpenAILike` Agent
+- `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 用于 ChatWeb 的 OpenAI-compatible Agent
 - `TWO_FACTOR_ENCRYPTION_KEY` 用于加密存储 TOTP secret，生产环境必须覆盖
 - `TWO_FACTOR_ISSUER_NAME` 会显示在 Google Authenticator、1Password 等应用中
 - `TWO_FACTOR_CHALLENGE_TTL_MINUTES` 和 `TWO_FACTOR_MAX_VERIFY_ATTEMPTS` 控制两阶段登录挑战的有效期与失败阈值

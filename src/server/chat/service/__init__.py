@@ -16,8 +16,10 @@ from .agent import build_agent_input, build_chat_agent, stream_agent_events
 from .constants import DEFAULT_MODEL_ID, MAX_HISTORY_MESSAGES
 from .events import (
     append_output_part,
+    append_reasoning_part,
     is_content_event,
     is_event,
+    is_reasoning_event,
     normalize_event_name,
     sse_event,
     tool_call_from_event,
@@ -38,6 +40,7 @@ __all__ = [
     "MAX_HISTORY_MESSAGES",
     "activate_message_version",
     "append_output_part",
+    "append_reasoning_part",
     "build_agent_input",
     "build_chat_agent",
     "build_fallback_parts",
@@ -47,6 +50,7 @@ __all__ = [
     "get_session_detail",
     "is_content_event",
     "is_event",
+    "is_reasoning_event",
     "normalize_event_name",
     "serialize_message",
     "serialize_session",
@@ -200,7 +204,6 @@ async def _stream_assistant_for_user(
         async for run_event in stream_agent_events(
             agent_input,
             user_id=str(current_user.id),
-            session_id=session.id,
         ):
             event_name = normalize_event_name(getattr(run_event, "event", ""))
             if is_event(event_name, "tool_call_started"):
@@ -231,6 +234,13 @@ async def _stream_assistant_for_user(
                 content_chunks.append(text)
                 part_id = append_output_part(parts, text)
                 yield sse_event("content_delta", {"part_id": part_id, "delta": text})
+                continue
+
+            reasoning_content = getattr(run_event, "reasoning_content", None)
+            if reasoning_content and is_reasoning_event(event_name):
+                text = str(reasoning_content)
+                part_id = append_reasoning_part(parts, text)
+                yield sse_event("reasoning_delta", {"part_id": part_id, "delta": text})
     except Exception as exc:
         yield sse_event("error", {"message": f"Agent 请求失败: {exc}"})
         return

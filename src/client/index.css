@@ -418,6 +418,27 @@ a {
   white-space: pre;
 }
 
+.chat-reasoning-markdown .chat-markdown {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.chat-reasoning-markdown .chat-markdown p,
+.chat-reasoning-markdown .chat-markdown ul,
+.chat-reasoning-markdown .chat-markdown ol,
+.chat-reasoning-markdown .chat-markdown pre {
+  margin-bottom: 0.45em;
+}
+
+.chat-reasoning-markdown .chat-markdown h1,
+.chat-reasoning-markdown .chat-markdown h2,
+.chat-reasoning-markdown .chat-markdown h3,
+.chat-reasoning-markdown .chat-markdown h4,
+.chat-reasoning-markdown .chat-markdown h5,
+.chat-reasoning-markdown .chat-markdown h6 {
+  margin: 0.75em 0 0.35em;
+}
+
 .chat-share-preview-markdown {
   overflow-wrap: anywhere;
 }

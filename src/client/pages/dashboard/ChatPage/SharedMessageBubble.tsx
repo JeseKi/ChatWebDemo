@@ -1,5 +1,6 @@
 import { Flex, Space, Typography, theme } from 'antd'
 import type { AssistantMessagePart, ChatMessage } from '../../../lib/chat'
+import AssistantReasoningTrace from './AssistantReasoningTrace'
 import AssistantToolTrace from './AssistantToolTrace'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
@@ -32,11 +33,13 @@ export default function SharedMessageBubble({ message }: { message: ChatMessage 
         ) : (
           <Flex vertical gap={8}>
             {assistantParts.map((part) =>
-              part.type === 'output' ? (
+              part.type === 'reasoning' ? (
+                <AssistantReasoningTrace key={part.id} content={part.content} />
+              ) : part.type === 'output' ? (
                 <MarkdownOutput key={part.id} content={part.content} />
-              ) : (
+              ) : part.type === 'tool' ? (
                 <AssistantToolTrace key={part.id} toolCall={part.tool_call} />
-              ),
+              ) : null,
             )}
             <Space size={4}>
               <CopyButton text={message.content} />

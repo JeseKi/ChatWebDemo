@@ -38,10 +38,9 @@ def test_stream_chat_persists_messages_and_tool_calls(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str, session_id: str):
+    async def fake_stream_agent_events(prompt: str, *, user_id: str):
         assert "ORDER-8831" in prompt
         assert user_id == "1"
-        assert session_id
         yield SimpleNamespace(
             event="ToolCallStarted",
             tool=SimpleNamespace(
@@ -109,12 +108,62 @@ def test_stream_chat_persists_messages_and_tool_calls(
     assert list_resp.json()[0]["id"] == session_id
 
 
+def test_stream_chat_persists_reasoning_parts(
+    test_client, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def fake_stream_agent_events(prompt: str, *, user_id: str):
+        yield SimpleNamespace(event="RunReasoningContent", reasoning_content="先检查订单状态")
+        yield SimpleNamespace(event="RunReasoningContent", reasoning_content="，再组织回复。")
+        yield SimpleNamespace(event="RunContent", content="订单会按时送达。")
+
+    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+
+    resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "帮我看看订单"},
+        headers=headers,
+    )
+
+    assert resp.status_code == HTTPStatus.OK, resp.text
+    events = _parse_sse(resp.text)
+    assert [event["event"] for event in events] == [
+        "session_ready",
+        "user_message",
+        "reasoning_delta",
+        "reasoning_delta",
+        "content_delta",
+        "done",
+    ]
+    assert events[2]["data"]["part_id"] == "reasoning-1"
+    assert events[4]["data"]["part_id"] == "output-2"
+
+    done = events[-1]["data"]
+    assert done["message"]["content"] == "订单会按时送达。"
+    assert [part["type"] for part in done["message"]["parts"]] == [
+        "reasoning",
+        "output",
+    ]
+    assert done["message"]["parts"][0]["content"] == "先检查订单状态，再组织回复。"
+    assert done["message"]["parts"][1]["content"] == "订单会按时送达。"
+
+    detail_resp = test_client.get(
+        f"/api/chat/sessions/{done['session']['id']}",
+        headers=headers,
+    )
+    assert detail_resp.status_code == HTTPStatus.OK, detail_resp.text
+    assistant = detail_resp.json()["messages"][1]
+    assert assistant["content"] == "订单会按时送达。"
+    assert [part["type"] for part in assistant["parts"]] == ["reasoning", "output"]
+
+
 def test_update_and_delete_chat_session(
     test_client, test_db_session, init_test_database, monkeypatch
 ):
     headers = _login_admin(test_client)
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str, session_id: str):
+    async def fake_stream_agent_events(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="你好")
 
     monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
@@ -167,7 +216,7 @@ def test_edit_user_message_creates_active_branch(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+    async def first_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="旧回复")
 
     monkeypatch.setattr(service, "stream_agent_events", first_agent)
@@ -183,7 +232,7 @@ def test_edit_user_message_creates_active_branch(
     detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
     old_user_id = detail_resp.json()["messages"][0]["id"]
 
-    async def edited_agent(prompt: str, *, user_id: str, session_id: str):
+    async def edited_agent(prompt: str, *, user_id: str):
         assert "新问题" in prompt
         assert "旧回复" not in prompt
         yield SimpleNamespace(event="RunContent", content="新回复")
@@ -225,7 +274,7 @@ def test_regenerate_replaces_latest_assistant_branch(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+    async def first_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第一次回复")
 
     monkeypatch.setattr(service, "stream_agent_events", first_agent)
@@ -239,7 +288,7 @@ def test_regenerate_replaces_latest_assistant_branch(
     session_id = create_done["session"]["id"]
     old_assistant_id = create_done["message"]["id"]
 
-    async def regenerated_agent(prompt: str, *, user_id: str, session_id: str):
+    async def regenerated_agent(prompt: str, *, user_id: str):
         assert "请回答" in prompt
         assert "第一次回复" not in prompt
         yield SimpleNamespace(event="RunContent", content="第二次回复")
@@ -277,7 +326,7 @@ def test_create_share_publicly_previews_immutable_snapshot(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+    async def first_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第一次回复")
 
     monkeypatch.setattr(service, "stream_agent_events", first_agent)
@@ -316,7 +365,7 @@ def test_create_share_publicly_previews_immutable_snapshot(
         "第一次回复",
     ]
 
-    async def second_agent(prompt: str, *, user_id: str, session_id: str):
+    async def second_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第二次回复")
 
     monkeypatch.setattr(service, "stream_agent_events", second_agent)
@@ -363,7 +412,7 @@ def test_shared_session_rejects_tampered_signature(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_agent(prompt: str, *, user_id: str, session_id: str):
+    async def fake_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="回复")
 
     monkeypatch.setattr(service, "stream_agent_events", fake_agent)
@@ -389,7 +438,7 @@ def test_share_requires_session_owner(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_agent(prompt: str, *, user_id: str, session_id: str):
+    async def fake_agent(prompt: str, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="回复")
 
     monkeypatch.setattr(service, "stream_agent_events", fake_agent)

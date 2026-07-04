@@ -1,5 +1,7 @@
 import { Empty, Flex, Input, Modal, Spin, Tag, theme } from 'antd'
-import type { ChatMessage, ChatSessionShare } from '../../../lib/chat'
+import type { AssistantMessagePart, ChatMessage, ChatSessionShare } from '../../../lib/chat'
+import AssistantReasoningTrace from './AssistantReasoningTrace'
+import AssistantToolTrace from './AssistantToolTrace'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
 
@@ -61,6 +63,7 @@ export default function ShareSessionModal({
 function PreviewMessage({ message }: { message: ChatMessage }) {
   const roleLabel = message.role === 'user' ? '用户' : '助手'
   const color = message.role === 'user' ? 'blue' : 'green'
+  const assistantParts = message.parts.length > 0 ? message.parts : fallbackAssistantParts(message)
 
   return (
     <Flex vertical gap={4}>
@@ -68,10 +71,38 @@ function PreviewMessage({ message }: { message: ChatMessage }) {
         {roleLabel}
       </Tag>
       <div className="chat-share-preview-markdown">
-        <MarkdownOutput content={message.content || ' '} />
+        {message.role === 'assistant' ? (
+          <Flex vertical gap={6}>
+            {assistantParts.map((part) =>
+              part.type === 'reasoning' ? (
+                <AssistantReasoningTrace key={part.id} content={part.content} />
+              ) : part.type === 'output' ? (
+                <MarkdownOutput key={part.id} content={part.content} />
+              ) : part.type === 'tool' ? (
+                <AssistantToolTrace key={part.id} toolCall={part.tool_call} />
+              ) : null,
+            )}
+          </Flex>
+        ) : (
+          <MarkdownOutput content={message.content || ' '} />
+        )}
       </div>
     </Flex>
   )
+}
+
+function fallbackAssistantParts(message: ChatMessage): AssistantMessagePart[] {
+  if (message.role !== 'assistant') {
+    return []
+  }
+  const parts: AssistantMessagePart[] = []
+  if (message.content) {
+    parts.push({ id: `${message.id}-output`, type: 'output', content: message.content })
+  }
+  for (const toolCall of message.tool_calls) {
+    parts.push({ id: toolCall.id, type: 'tool', tool_call: toolCall })
+  }
+  return parts
 }
 
 function resolveShareUrl(value: string): string {

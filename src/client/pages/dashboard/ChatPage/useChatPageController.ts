@@ -10,7 +10,10 @@ import type {
 } from '../../../lib/chat'
 import {
   appendAssistantDelta,
+  appendAssistantReasoningDelta,
   appendOrReplaceMessage,
+  appendPendingUserMessage,
+  ensureStreamingAssistant,
   replaceStreamingMessage,
   resetMessageBranch,
   upsertAssistantToolCall,
@@ -203,7 +206,12 @@ export function useChatPageController() {
       return
     }
     if (event.type === 'branch_reset') {
-      setMessages((current) => resetMessageBranch(current, event.parent_message_id))
+      setMessages((current) =>
+        ensureStreamingAssistant(
+          resetMessageBranch(current, event.parent_message_id),
+          activeSessionIdRef.current,
+        ),
+      )
       return
     }
     if (event.type === 'user_message') {
@@ -213,6 +221,17 @@ export function useChatPageController() {
     if (event.type === 'content_delta') {
       setMessages((current) =>
         appendAssistantDelta(current, activeSessionIdRef.current, event.part_id, event.delta),
+      )
+      return
+    }
+    if (event.type === 'reasoning_delta') {
+      setMessages((current) =>
+        appendAssistantReasoningDelta(
+          current,
+          activeSessionIdRef.current,
+          event.part_id,
+          event.delta,
+        ),
       )
       return
     }
@@ -257,14 +276,17 @@ export function useChatPageController() {
       () => {
         setEditingMessageId(null)
         setEditingMessageContent('')
+        setMessages((current) => ensureStreamingAssistant(current, activeSessionIdRef.current))
       },
     )
   }
 
   const regenerateLatestMessage = async () => {
     if (!activeSessionId || streaming) return
-    await runStreamingRequest((signal, onEvent) =>
-      chatApi.regenerateChatSession({ sessionId: activeSessionId, signal, onEvent }),
+    await runStreamingRequest(
+      (signal, onEvent) =>
+        chatApi.regenerateChatSession({ sessionId: activeSessionId, signal, onEvent }),
+      () => setMessages((current) => ensureStreamingAssistant(current, activeSessionIdRef.current)),
     )
   }
 
@@ -290,7 +312,15 @@ export function useChatPageController() {
     await runStreamingRequest(
       (signal, onEvent) =>
         chatApi.streamChatMessage({ sessionId: activeSessionId, message: prompt, signal, onEvent }),
-      () => setInput(''),
+      () => {
+        setInput('')
+        setMessages((current) =>
+          ensureStreamingAssistant(
+            appendPendingUserMessage(current, activeSessionIdRef.current, prompt),
+            activeSessionIdRef.current,
+          ),
+        )
+      },
     )
   }
 

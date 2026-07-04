@@ -4,11 +4,20 @@ import { useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ToolCallTrace, ToolCallStatus } from '../../../lib/chat'
 
-export default function AssistantToolTrace({ toolCall }: { toolCall: ToolCallTrace }) {
+export default function AssistantToolTrace({
+  toolCall,
+}: {
+  toolCall: ToolCallTrace | null | undefined
+}) {
   const { token } = theme.useToken()
   const [toolOpen, setToolOpen] = useState(false)
   const [argumentsOpen, setArgumentsOpen] = useState(false)
   const [resultOpen, setResultOpen] = useState(false)
+
+  if (!toolCall) {
+    return null
+  }
+
   const displayName = toolCall.display_name || toolCall.name
   const resultText = formatValue(toolCall.result)
   const hasResult =
