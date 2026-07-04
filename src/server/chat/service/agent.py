@@ -9,7 +9,12 @@ from typing import Any
 
 from ..models import ChatMessage
 from ..tools import get_chat_tools
-from .constants import DEFAULT_MODEL_ID, MAX_HISTORY_MESSAGES
+from .constants import (
+    CHAT_AGENT_HISTORY_PROMPT,
+    CHAT_AGENT_INSTRUCTIONS,
+    DEFAULT_MODEL_ID,
+    MAX_HISTORY_MESSAGES,
+)
 
 
 async def stream_agent_events(
@@ -44,10 +49,7 @@ def build_chat_agent() -> Any:
     return Agent(
         model=OpenAILike(id=model_id, api_key=api_key, base_url=base_url),
         tools=get_chat_tools(),
-        instructions=(
-            "You are a concise support assistant. Use available tools when they are "
-            "needed to answer factual order questions. Answer in the user's language."
-        ),
+        instructions=CHAT_AGENT_INSTRUCTIONS,
         markdown=True,
         tool_call_limit=4,
     )
@@ -56,7 +58,7 @@ def build_chat_agent() -> Any:
 def build_agent_input(messages: list[ChatMessage]) -> str:
     recent_messages = messages[-MAX_HISTORY_MESSAGES:]
     lines = [
-        "Conversation history follows. Answer the latest user message.",
+        CHAT_AGENT_HISTORY_PROMPT,
         "",
     ]
     for item in recent_messages:
