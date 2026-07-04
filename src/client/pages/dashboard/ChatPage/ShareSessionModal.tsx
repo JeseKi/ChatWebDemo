@@ -1,6 +1,7 @@
 import { Empty, Flex, Input, Modal, Spin, Tag, Typography, theme } from 'antd'
 import type { ChatMessage, ChatSessionShare } from '../../../lib/chat'
 import CopyButton from './CopyButton'
+import MarkdownOutput from './MarkdownOutput'
 
 const PREVIEW_MESSAGE_COUNT = 4
 
@@ -76,18 +77,9 @@ function PreviewMessage({ message }: { message: ChatMessage }) {
       <Tag color={color} style={{ width: 'fit-content' }}>
         {roleLabel}
       </Tag>
-      <Typography.Text
-        style={{
-          display: '-webkit-box',
-          overflow: 'hidden',
-          overflowWrap: 'anywhere',
-          WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: 2,
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        {message.content || ' '}
-      </Typography.Text>
+      <div className="chat-share-preview-markdown">
+        <MarkdownOutput content={message.content || ' '} />
+      </div>
     </Flex>
   )
 }
