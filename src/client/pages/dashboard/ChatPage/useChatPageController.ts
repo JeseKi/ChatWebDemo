@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App } from 'antd'
+import { useNavigate, useParams } from 'react-router-dom'
 import * as chatApi from '../../../lib/chat'
 import type {
   ChatMessage,
@@ -18,6 +19,8 @@ import { resolveErrorMessage } from './utils'
 
 export function useChatPageController() {
   const { message: toast } = App.useApp()
+  const navigate = useNavigate()
+  const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -34,7 +37,13 @@ export function useChatPageController() {
   const [editingMessageContent, setEditingMessageContent] = useState('')
   const [mutatingSessionId, setMutatingSessionId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const activeSessionIdRef = useRef<string | null>(null)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
+
+  const updateActiveSessionId = useCallback((sessionId: string | null) => {
+    activeSessionIdRef.current = sessionId
+    setActiveSessionId(sessionId)
+  }, [])
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -48,8 +57,14 @@ export function useChatPageController() {
     })
   }, [])
 
-  const loadSession = useCallback(async (sessionId: string) => {
-    setActiveSessionId(sessionId)
+  const loadSession = useCallback(async (
+    sessionId: string,
+    options?: { replace?: boolean; syncUrl?: boolean },
+  ) => {
+    updateActiveSessionId(sessionId)
+    if (options?.syncUrl !== false) {
+      navigate(`/chat/${sessionId}`, { replace: options?.replace ?? false })
+    }
     setLoadingMessages(true)
     try {
       const detail = await chatApi.getChatSession(sessionId)
@@ -57,27 +72,52 @@ export function useChatPageController() {
       upsertSession(detail)
     } catch (error) {
       toast.error(resolveErrorMessage(error))
+      updateActiveSessionId(null)
+      setMessages([])
+      navigate('/chat', { replace: true })
     } finally {
       setLoadingMessages(false)
     }
-  }, [toast, upsertSession])
+  }, [navigate, toast, updateActiveSessionId, upsertSession])
 
-  const refreshSessions = useCallback(async (options?: { autoloadFirst?: boolean }) => {
+  const refreshSessions = useCallback(async () => {
     setLoadingSessions(true)
     try {
       const result = await chatApi.listChatSessions()
       setSessions(result)
-      if (options?.autoloadFirst && result.length > 0) void loadSession(result[0].id)
     } catch (error) {
       toast.error(resolveErrorMessage(error))
     } finally {
       setLoadingSessions(false)
     }
-  }, [loadSession, toast])
+  }, [toast])
 
   useEffect(() => {
-    void refreshSessions({ autoloadFirst: true })
+    void refreshSessions()
   }, [refreshSessions])
+
+  const startNewSession = useCallback((options?: { syncUrl?: boolean }) => {
+    updateActiveSessionId(null)
+    setMessages([])
+    setInput('')
+    setEditingSessionId(null)
+    setEditingTitle('')
+    setEditingMessageId(null)
+    setEditingMessageContent('')
+    if (options?.syncUrl !== false) {
+      navigate('/chat')
+    }
+  }, [navigate, updateActiveSessionId])
+
+  useEffect(() => {
+    if (routeSessionId) {
+      if (routeSessionId !== activeSessionIdRef.current) {
+        void loadSession(routeSessionId, { syncUrl: false })
+      }
+      return
+    }
+    startNewSession({ syncUrl: false })
+  }, [loadSession, routeSessionId, startNewSession])
 
   useEffect(() => {
     transcriptRef.current?.scrollTo({
@@ -85,16 +125,6 @@ export function useChatPageController() {
       behavior: 'smooth',
     })
   }, [messages])
-
-  const startNewSession = () => {
-    setActiveSessionId(null)
-    setMessages([])
-    setInput('')
-    setEditingSessionId(null)
-    setEditingTitle('')
-    setEditingMessageId(null)
-    setEditingMessageContent('')
-  }
 
   const startEditingSession = (session: ChatSession) => {
     setEditingSessionId(session.id)
@@ -138,8 +168,7 @@ export function useChatPageController() {
       })
       if (activeSessionId === sessionId && nextActiveSessionId) await loadSession(nextActiveSessionId)
       if (activeSessionId === sessionId && !nextActiveSessionId) {
-        setActiveSessionId(null)
-        setMessages([])
+        startNewSession()
       }
       if (editingSessionId === sessionId) cancelEditingSession()
       toast.success('会话已删除')
@@ -168,8 +197,9 @@ export function useChatPageController() {
 
   const handleStreamEvent = (event: ChatStreamEvent) => {
     if (event.type === 'session_ready') {
-      setActiveSessionId(event.session.id)
+      updateActiveSessionId(event.session.id)
       upsertSession(event.session)
+      navigate(`/chat/${event.session.id}`, { replace: true })
       return
     }
     if (event.type === 'branch_reset') {
@@ -182,12 +212,14 @@ export function useChatPageController() {
     }
     if (event.type === 'content_delta') {
       setMessages((current) =>
-        appendAssistantDelta(current, activeSessionId, event.part_id, event.delta),
+        appendAssistantDelta(current, activeSessionIdRef.current, event.part_id, event.delta),
       )
       return
     }
     if (event.type === 'tool_call_started' || event.type === 'tool_call_completed') {
-      setMessages((current) => upsertAssistantToolCall(current, activeSessionId, event.tool_call))
+      setMessages((current) =>
+        upsertAssistantToolCall(current, activeSessionIdRef.current, event.tool_call),
+      )
       return
     }
     if (event.type === 'done') {
@@ -241,9 +273,10 @@ export function useChatPageController() {
     setLoadingMessages(true)
     try {
       const detail = await chatApi.activateChatMessageVersion(messageId, targetMessageId)
-      setActiveSessionId(detail.id)
+      updateActiveSessionId(detail.id)
       setMessages(detail.messages)
       upsertSession(detail)
+      navigate(`/chat/${detail.id}`, { replace: true })
     } catch (error) {
       toast.error(resolveErrorMessage(error))
     } finally {

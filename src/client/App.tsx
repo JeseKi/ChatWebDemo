@@ -33,6 +33,22 @@ export default function App() {
             <Route path="/profile/password-change/:token" element={<ConfirmPasswordChangePage />} />
             <Route path="/shared/chat/:token" element={<SharedChatPage />} />
             <Route
+              path="/chat"
+              element={
+                <RequireAuth>
+                  <ChatPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/chat/:sessionId"
+              element={
+                <RequireAuth>
+                  <ChatPage />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/oauth/authorize"
               element={
                 <RequireAuth>
@@ -57,7 +73,6 @@ export default function App() {
             >
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/example" element={<ExamplePage />} />
-              <Route path="/chat" element={<ChatPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/security" element={<SecurityPage />} />
               <Route path="/profile/devices" element={<DevicesPage />} />

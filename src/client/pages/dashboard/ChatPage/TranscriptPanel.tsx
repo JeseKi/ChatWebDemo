@@ -37,6 +37,7 @@ export default function TranscriptPanel({
       ref={transcriptRef}
       style={{
         flex: 1,
+        minHeight: 0,
         overflowY: 'auto',
         border: `1px solid ${token.colorBorder}`,
         borderRadius: 8,

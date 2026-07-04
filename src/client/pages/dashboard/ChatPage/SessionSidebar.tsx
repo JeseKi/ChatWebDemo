@@ -12,6 +12,7 @@ import {
   theme,
 } from 'antd'
 import {
+  ArrowLeftOutlined,
   CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
@@ -19,6 +20,7 @@ import {
   MessageOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
+import { Link } from 'react-router-dom'
 import type { ChatSession } from '../../../lib/chat'
 
 export default function SessionSidebar({
@@ -35,6 +37,7 @@ export default function SessionSidebar({
   onCancelEditingSession,
   onSaveSessionTitle,
   onDeleteSession,
+  onClose,
 }: {
   sessions: ChatSession[]
   activeSessionId: string | null
@@ -49,50 +52,60 @@ export default function SessionSidebar({
   onCancelEditingSession: () => void
   onSaveSessionTitle: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onClose: () => void
 }) {
-  const { token } = theme.useToken()
-
   return (
     <Flex
       vertical
       style={{
-        width: 280,
-        minWidth: 220,
-        borderRight: `1px solid ${token.colorBorder}`,
-        paddingRight: 12,
+        width: '100%',
+        minWidth: 0,
+        height: '100%',
       }}
     >
-      <Flex align="center" justify="space-between" style={{ marginBottom: 12 }}>
-        <Typography.Title level={5} style={{ margin: 0 }}>
-          对话
-        </Typography.Title>
-        <Tooltip title="新对话">
-          <Button icon={<PlusOutlined />} onClick={onStartNewSession} />
+      <Flex align="center" justify="space-between" gap={8} style={{ marginBottom: 12 }}>
+        <Tooltip title="返回工作台">
+          <Link to="/dashboard" onClick={onClose}>
+            <Button type="text" icon={<ArrowLeftOutlined />} />
+          </Link>
+        </Tooltip>
+        <Flex align="center" gap={8}>
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            对话
+          </Typography.Title>
+          <Tooltip title="新对话">
+            <Button icon={<PlusOutlined />} onClick={onStartNewSession} />
+          </Tooltip>
+        </Flex>
+        <Tooltip title="关闭侧栏">
+          <Button type="text" icon={<CloseOutlined />} onClick={onClose} />
         </Tooltip>
       </Flex>
-      <Spin spinning={loadingSessions}>
-        <List
-          dataSource={sessions}
-          locale={{
-            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对话" />,
-          }}
-          renderItem={(session) => (
-            <SessionListItem
-              session={session}
-              activeSessionId={activeSessionId}
-              editingSessionId={editingSessionId}
-              editingTitle={editingTitle}
-              mutatingSessionId={mutatingSessionId}
-              onLoadSession={onLoadSession}
-              onStartEditingSession={onStartEditingSession}
-              onEditingTitleChange={onEditingTitleChange}
-              onCancelEditingSession={onCancelEditingSession}
-              onSaveSessionTitle={onSaveSessionTitle}
-              onDeleteSession={onDeleteSession}
-            />
-          )}
-        />
-      </Spin>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <Spin spinning={loadingSessions}>
+          <List
+            dataSource={sessions}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对话" />,
+            }}
+            renderItem={(session) => (
+              <SessionListItem
+                session={session}
+                activeSessionId={activeSessionId}
+                editingSessionId={editingSessionId}
+                editingTitle={editingTitle}
+                mutatingSessionId={mutatingSessionId}
+                onLoadSession={onLoadSession}
+                onStartEditingSession={onStartEditingSession}
+                onEditingTitleChange={onEditingTitleChange}
+                onCancelEditingSession={onCancelEditingSession}
+                onSaveSessionTitle={onSaveSessionTitle}
+                onDeleteSession={onDeleteSession}
+              />
+            )}
+          />
+        </Spin>
+      </div>
     </Flex>
   )
 }
