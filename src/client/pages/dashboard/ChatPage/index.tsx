@@ -25,6 +25,9 @@ import {
   EditOutlined,
   CheckOutlined,
   CloseOutlined,
+  ReloadOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons'
 import * as chatApi from '../../../lib/chat'
 import type {
@@ -49,6 +52,8 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
+  const [editingMessageContent, setEditingMessageContent] = useState('')
   const [mutatingSessionId, setMutatingSessionId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
@@ -111,6 +116,8 @@ export default function ChatPage() {
     setInput('')
     setEditingSessionId(null)
     setEditingTitle('')
+    setEditingMessageId(null)
+    setEditingMessageContent('')
   }
 
   const startEditingSession = (session: ChatSession) => {
@@ -178,6 +185,89 @@ export default function ChatPage() {
     setStreaming(false)
   }
 
+  const startEditingMessage = (message: ChatMessage) => {
+    setEditingMessageId(message.id)
+    setEditingMessageContent(message.content)
+  }
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null)
+    setEditingMessageContent('')
+  }
+
+  const saveEditedMessage = async (messageId: number) => {
+    const prompt = editingMessageContent.trim()
+    if (!prompt || streaming) {
+      return
+    }
+
+    setStreaming(true)
+    setEditingMessageId(null)
+    setEditingMessageContent('')
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      await chatApi.editChatMessage({
+        messageId,
+        message: prompt,
+        signal: controller.signal,
+        onEvent: handleStreamEvent,
+      })
+      await refreshSessions()
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        toast.error(resolveErrorMessage(error))
+      }
+    } finally {
+      abortRef.current = null
+      setStreaming(false)
+    }
+  }
+
+  const regenerateLatestMessage = async () => {
+    if (!activeSessionId || streaming) {
+      return
+    }
+
+    setStreaming(true)
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      await chatApi.regenerateChatSession({
+        sessionId: activeSessionId,
+        signal: controller.signal,
+        onEvent: handleStreamEvent,
+      })
+      await refreshSessions()
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        toast.error(resolveErrorMessage(error))
+      }
+    } finally {
+      abortRef.current = null
+      setStreaming(false)
+    }
+  }
+
+  const activateMessageVersion = async (messageId: number, targetMessageId: number) => {
+    if (streaming) {
+      return
+    }
+    setLoadingMessages(true)
+    try {
+      const detail = await chatApi.activateChatMessageVersion(messageId, targetMessageId)
+      setActiveSessionId(detail.id)
+      setMessages(detail.messages)
+      upsertSession(detail)
+    } catch (error) {
+      toast.error(resolveErrorMessage(error))
+    } finally {
+      setLoadingMessages(false)
+    }
+  }
+
   const sendMessage = async () => {
     const prompt = input.trim()
     if (!prompt || streaming) {
@@ -213,6 +303,10 @@ export default function ChatPage() {
       upsertSession(event.session)
       return
     }
+    if (event.type === 'branch_reset') {
+      resetMessageBranch(event.parent_message_id)
+      return
+    }
     if (event.type === 'user_message') {
       appendOrReplaceMessage(event.message)
       return
@@ -245,6 +339,19 @@ export default function ChatPage() {
     })
   }
 
+  const resetMessageBranch = (parentMessageId: number | null) => {
+    setMessages((current) => {
+      if (parentMessageId === null) {
+        return []
+      }
+      const parentIndex = current.findIndex((item) => item.id === parentMessageId)
+      if (parentIndex < 0) {
+        return current.filter((item) => item.id !== STREAMING_MESSAGE_ID)
+      }
+      return current.slice(0, parentIndex + 1)
+    })
+  }
+
   const appendAssistantDelta = (partId: string, delta: string) => {
     setMessages((current) => {
       const streamingMessage = current.find((item) => item.id === STREAMING_MESSAGE_ID)
@@ -266,6 +373,13 @@ export default function ChatPage() {
           session_id: activeSessionId ?? '',
           role: 'assistant',
           content: delta,
+          parent_message_id: null,
+          source_message_id: null,
+          version_index: 1,
+          version_count: 1,
+          version_position: 1,
+          previous_version_message_id: null,
+          next_version_message_id: null,
           tool_calls: [],
           parts: [{ id: partId, type: 'output', content: delta }],
           sequence: current.length + 1,
@@ -310,6 +424,13 @@ export default function ChatPage() {
         session_id: activeSessionId ?? '',
         role: 'assistant',
         content: '',
+        parent_message_id: null,
+        source_message_id: null,
+        version_index: 1,
+        version_count: 1,
+        version_position: 1,
+        previous_version_message_id: null,
+        next_version_message_id: null,
         tool_calls: [],
         parts: [],
         sequence: current.length + 1,
@@ -468,7 +589,20 @@ export default function ChatPage() {
             ) : (
               <Flex vertical gap={12}>
                 {messages.map((item) => (
-                  <MessageBubble key={item.id} message={item} />
+                  <MessageBubble
+                    key={item.id}
+                    message={item}
+                    isLatest={item.id === messages[messages.length - 1]?.id}
+                    streaming={streaming}
+                    editingMessageId={editingMessageId}
+                    editingMessageContent={editingMessageContent}
+                    onStartEditingMessage={startEditingMessage}
+                    onEditingMessageContentChange={setEditingMessageContent}
+                    onCancelEditingMessage={cancelEditingMessage}
+                    onSaveEditedMessage={saveEditedMessage}
+                    onRegenerateLatestMessage={regenerateLatestMessage}
+                    onActivateMessageVersion={activateMessageVersion}
+                  />
                 ))}
               </Flex>
             )}
@@ -541,9 +675,34 @@ function upsertToolPart(
   return [...parts, { id: toolCall.id, type: 'tool', tool_call: toolCall }]
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  isLatest,
+  streaming,
+  editingMessageId,
+  editingMessageContent,
+  onStartEditingMessage,
+  onEditingMessageContentChange,
+  onCancelEditingMessage,
+  onSaveEditedMessage,
+  onRegenerateLatestMessage,
+  onActivateMessageVersion,
+}: {
+  message: ChatMessage
+  isLatest: boolean
+  streaming: boolean
+  editingMessageId: number | null
+  editingMessageContent: string
+  onStartEditingMessage: (message: ChatMessage) => void
+  onEditingMessageContentChange: (value: string) => void
+  onCancelEditingMessage: () => void
+  onSaveEditedMessage: (messageId: number) => Promise<void>
+  onRegenerateLatestMessage: () => Promise<void>
+  onActivateMessageVersion: (messageId: number, targetMessageId: number) => Promise<void>
+}) {
   const { token } = theme.useToken()
   const isUser = message.role === 'user'
+  const isEditing = editingMessageId === message.id
   const assistantParts = message.parts.length > 0 ? message.parts : fallbackAssistantParts(message)
 
   return (
@@ -557,15 +716,61 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           border: `1px solid ${isUser ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
         }}
       >
-        {isUser ? (
-          <Typography.Text
-            style={{
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
-            }}
-          >
-            {message.content}
-          </Typography.Text>
+        {isUser && isEditing ? (
+          <Flex vertical gap={8}>
+            <Input.TextArea
+              value={editingMessageContent}
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              onChange={(event) => onEditingMessageContentChange(event.target.value)}
+              onPressEnter={(event) => {
+                if (!event.shiftKey) {
+                  event.preventDefault()
+                  void onSaveEditedMessage(message.id)
+                }
+              }}
+            />
+            <Space size={4} style={{ alignSelf: 'flex-end' }}>
+              <Button size="small" onClick={onCancelEditingMessage}>
+                取消
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                icon={<CheckOutlined />}
+                disabled={!editingMessageContent.trim() || streaming}
+                onClick={() => void onSaveEditedMessage(message.id)}
+              >
+                保存
+              </Button>
+            </Space>
+          </Flex>
+        ) : isUser ? (
+          <Flex vertical gap={6}>
+            <Typography.Text
+              style={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              {message.content}
+            </Typography.Text>
+            <Space size={4} style={{ alignSelf: 'flex-end' }}>
+              <VersionSwitcher
+                message={message}
+                disabled={streaming}
+                onActivateMessageVersion={onActivateMessageVersion}
+              />
+              <Tooltip title="编辑消息">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<EditOutlined />}
+                  disabled={streaming}
+                  onClick={() => onStartEditingMessage(message)}
+                />
+              </Tooltip>
+            </Space>
+          </Flex>
         ) : (
           <Flex vertical gap={8}>
             {assistantParts.length === 0 && message.id === STREAMING_MESSAGE_ID ? (
@@ -579,10 +784,71 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                 ),
               )
             )}
+            {isLatest && message.id !== STREAMING_MESSAGE_ID && (
+              <Space size={4}>
+                <VersionSwitcher
+                  message={message}
+                  disabled={streaming}
+                  onActivateMessageVersion={onActivateMessageVersion}
+                />
+                <Tooltip title="重新生成">
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<ReloadOutlined />}
+                    disabled={streaming}
+                    onClick={() => void onRegenerateLatestMessage()}
+                  />
+                </Tooltip>
+              </Space>
+            )}
           </Flex>
         )}
       </div>
     </Flex>
+  )
+}
+
+function VersionSwitcher({
+  message,
+  disabled,
+  onActivateMessageVersion,
+}: {
+  message: ChatMessage
+  disabled: boolean
+  onActivateMessageVersion: (messageId: number, targetMessageId: number) => Promise<void>
+}) {
+  if (message.version_count <= 1) {
+    return null
+  }
+  return (
+    <Space size={2}>
+      <Button
+        size="small"
+        type="text"
+        icon={<LeftOutlined />}
+        disabled={disabled || message.previous_version_message_id === null}
+        onClick={() => {
+          if (message.previous_version_message_id !== null) {
+            void onActivateMessageVersion(message.id, message.previous_version_message_id)
+          }
+        }}
+      />
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {message.version_position}/{message.version_count}
+      </Typography.Text>
+      <Button
+        size="small"
+        type="text"
+        icon={<RightOutlined />}
+        disabled={disabled || message.next_version_message_id === null}
+        onClick={() => {
+          if (message.next_version_message_id !== null) {
+            void onActivateMessageVersion(message.id, message.next_version_message_id)
+          }
+        }}
+      />
+    </Space>
   )
 }
 

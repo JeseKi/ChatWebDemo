@@ -50,6 +50,17 @@ class ChatDAO(BaseDAO):
             .first()
         )
 
+    def get_session_by_message_id(
+        self, *, message_id: int, user_id: int
+    ) -> tuple[ChatSession, ChatMessage] | None:
+        message = self.get_message(message_id=message_id, user_id=user_id)
+        if not message:
+            return None
+        session = self.get_session(session_id=message.session_id, user_id=user_id)
+        if not session:
+            return None
+        return session, message
+
     def list_sessions(self, *, user_id: int, limit: int = 50) -> list[ChatSession]:
         return (
             self.db_session.query(ChatSession)
@@ -62,10 +73,113 @@ class ChatDAO(BaseDAO):
     def list_messages(self, *, session_id: str, user_id: int) -> list[ChatMessage]:
         return (
             self.db_session.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id, ChatMessage.user_id == user_id)
+            .filter(
+                ChatMessage.session_id == session_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.deleted_at.is_(None),
+            )
             .order_by(ChatMessage.sequence.asc(), ChatMessage.id.asc())
             .all()
         )
+
+    def list_active_path(self, *, session: ChatSession) -> list[ChatMessage]:
+        if session.active_leaf_message_id is None:
+            return []
+        messages = self.list_messages(session_id=session.id, user_id=session.user_id)
+        by_id = {message.id: message for message in messages}
+        path: list[ChatMessage] = []
+        current = by_id.get(session.active_leaf_message_id)
+        while current is not None:
+            path.append(current)
+            current = (
+                by_id.get(current.parent_message_id)
+                if current.parent_message_id is not None
+                else None
+            )
+        return list(reversed(path))
+
+    def get_message(self, *, message_id: int, user_id: int) -> ChatMessage | None:
+        return (
+            self.db_session.query(ChatMessage)
+            .filter(
+                ChatMessage.id == message_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def get_latest_user_message(self, *, session: ChatSession) -> ChatMessage | None:
+        for message in reversed(self.list_active_path(session=session)):
+            if message.role == "user":
+                return message
+        return None
+
+    def list_versions_for_message(self, message: ChatMessage) -> list[ChatMessage]:
+        source_message_id = message.source_message_id or message.id
+        return (
+            self.db_session.query(ChatMessage)
+            .filter(
+                ChatMessage.session_id == message.session_id,
+                ChatMessage.user_id == message.user_id,
+                ChatMessage.role == message.role,
+                ChatMessage.deleted_at.is_(None),
+                (
+                    (ChatMessage.id == source_message_id)
+                    | (ChatMessage.source_message_id == source_message_id)
+                ),
+            )
+            .order_by(ChatMessage.version_index.asc(), ChatMessage.id.asc())
+            .all()
+        )
+
+    def latest_leaf_from_message(self, message: ChatMessage) -> ChatMessage:
+        messages = self.list_messages(session_id=message.session_id, user_id=message.user_id)
+        children_by_parent: dict[int, list[ChatMessage]] = {}
+        for item in messages:
+            if item.parent_message_id is None:
+                continue
+            children_by_parent.setdefault(item.parent_message_id, []).append(item)
+
+        current = message
+        while True:
+            children = children_by_parent.get(current.id, [])
+            if not children:
+                return current
+            current = sorted(children, key=lambda item: (item.sequence, item.id))[-1]
+
+    def activate_message_version(
+        self,
+        *,
+        message_id: int,
+        target_message_id: int,
+        user_id: int,
+    ) -> ChatSession | None:
+        current_message = self.get_message(message_id=message_id, user_id=user_id)
+        target_message = self.get_message(message_id=target_message_id, user_id=user_id)
+        if not current_message or not target_message:
+            return None
+        if current_message.session_id != target_message.session_id:
+            return None
+        current_source_id = current_message.source_message_id or current_message.id
+        target_source_id = target_message.source_message_id or target_message.id
+        if current_source_id != target_source_id:
+            return None
+
+        leaf = self.latest_leaf_from_message(target_message)
+        return self.set_active_leaf(
+            session_id=target_message.session_id,
+            user_id=user_id,
+            message_id=leaf.id,
+        )
+
+    def next_version_index(self, *, source_message_id: int) -> int:
+        count = (
+            self.db_session.query(func.count(ChatMessage.id))
+            .filter(ChatMessage.source_message_id == source_message_id)
+            .scalar()
+        )
+        return int(count or 0) + 2
 
     def update_session_title(
         self, *, session_id: str, user_id: int, title: str
@@ -96,8 +210,12 @@ class ChatDAO(BaseDAO):
         user_id: int,
         role: str,
         content: str,
+        parent_message_id: int | None = None,
+        source_message_id: int | None = None,
+        version_index: int = 1,
         tool_calls: list[dict[str, Any]] | None = None,
         parts: list[dict[str, Any]] | None = None,
+        make_active_leaf: bool = True,
     ) -> ChatMessage:
         current_max = (
             self.db_session.query(func.max(ChatMessage.sequence))
@@ -108,21 +226,40 @@ class ChatDAO(BaseDAO):
             session_id=session_id,
             user_id=user_id,
             sequence=(current_max or 0) + 1,
+            parent_message_id=parent_message_id,
+            source_message_id=source_message_id,
+            version_index=version_index,
             role=role,
             content=content,
             tool_calls_json=_dump_tool_calls(tool_calls),
             parts_json=_dump_json_list(parts),
         )
         self.db_session.add(message)
-        self.touch_session(session_id=session_id, user_id=user_id)
+        session = self.get_session(session_id=session_id, user_id=user_id)
+        if session:
+            session.updated_at = datetime.now(timezone.utc)
         self.db_session.commit()
         self.db_session.refresh(message)
+        if make_active_leaf:
+            self.set_active_leaf(session_id=session_id, user_id=user_id, message_id=message.id)
         return message
 
     def touch_session(self, *, session_id: str, user_id: int) -> None:
         session = self.get_session(session_id=session_id, user_id=user_id)
         if session:
             session.updated_at = datetime.now(timezone.utc)
+
+    def set_active_leaf(
+        self, *, session_id: str, user_id: int, message_id: int | None
+    ) -> ChatSession | None:
+        session = self.get_session(session_id=session_id, user_id=user_id)
+        if not session:
+            return None
+        session.active_leaf_message_id = message_id
+        session.updated_at = datetime.now(timezone.utc)
+        self.db_session.commit()
+        self.db_session.refresh(session)
+        return session
 
 
 def parse_tool_calls(value: str | None) -> list[dict[str, Any]]:

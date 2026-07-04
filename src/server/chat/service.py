@@ -26,19 +26,25 @@ def serialize_session(session: ChatSession) -> dict[str, Any]:
     return {
         "id": session.id,
         "title": session.title,
+        "active_leaf_message_id": session.active_leaf_message_id,
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
     }
 
 
-def serialize_message(message: ChatMessage) -> dict[str, Any]:
+def serialize_message(message: ChatMessage, dao: ChatDAO | None = None) -> dict[str, Any]:
     tool_calls = parse_tool_calls(message.tool_calls_json)
     parts = parse_message_parts(message.parts_json)
+    version_info = build_version_info(message, dao)
     return {
         "id": message.id,
         "session_id": message.session_id,
         "role": message.role,
         "content": message.content,
+        "parent_message_id": message.parent_message_id,
+        "source_message_id": message.source_message_id,
+        "version_index": message.version_index,
+        **version_info,
         "tool_calls": tool_calls,
         "parts": parts or build_fallback_parts(message.content, tool_calls),
         "sequence": message.sequence,
@@ -55,8 +61,8 @@ def get_session_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="聊天会话不存在")
 
     messages = [
-        ChatMessageOut.model_validate(serialize_message(message))
-        for message in dao.list_messages(session_id=session.id, user_id=current_user.id)
+        ChatMessageOut.model_validate(serialize_message(message, dao))
+        for message in dao.list_active_path(session=session)
     ]
     return ChatSessionDetailOut.model_validate({**serialize_session(session), "messages": messages})
 
@@ -85,12 +91,115 @@ async def stream_chat(
         user_id=current_user.id,
         role="user",
         content=prompt,
+        parent_message_id=session.active_leaf_message_id,
     )
 
     yield sse_event("session_ready", {"session": serialize_session(session)})
-    yield sse_event("user_message", {"message": serialize_message(user_message)})
+    yield sse_event("user_message", {"message": serialize_message(user_message, dao)})
+    async for event in _stream_assistant_for_user(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+    ):
+        yield event
 
-    history = dao.list_messages(session_id=session.id, user_id=current_user.id)
+
+async def stream_edit_message(
+    db: Session,
+    *,
+    current_user: User,
+    message_id: int,
+    message: str,
+) -> AsyncIterator[str]:
+    dao = ChatDAO(db)
+    prompt = message.strip()
+    if not prompt:
+        yield sse_event("error", {"message": "消息不能为空"})
+        return
+
+    result = dao.get_session_by_message_id(message_id=message_id, user_id=current_user.id)
+    if not result:
+        yield sse_event("error", {"message": "消息不存在"})
+        return
+    session, original = result
+    if original.role != "user":
+        yield sse_event("error", {"message": "只能编辑用户消息"})
+        return
+
+    source_message_id = original.source_message_id or original.id
+    user_message = dao.append_message(
+        session_id=session.id,
+        user_id=current_user.id,
+        role="user",
+        content=prompt,
+        parent_message_id=original.parent_message_id,
+        source_message_id=source_message_id,
+        version_index=dao.next_version_index(source_message_id=source_message_id),
+    )
+    yield sse_event("session_ready", {"session": serialize_session(session)})
+    yield sse_event(
+        "branch_reset",
+        {"parent_message_id": original.parent_message_id, "message_id": original.id},
+    )
+    yield sse_event("user_message", {"message": serialize_message(user_message, dao)})
+    async for event in _stream_assistant_for_user(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+    ):
+        yield event
+
+
+async def stream_regenerate(
+    db: Session,
+    *,
+    current_user: User,
+    session_id: str,
+) -> AsyncIterator[str]:
+    dao = ChatDAO(db)
+    session = dao.get_session(session_id=session_id, user_id=current_user.id)
+    if not session:
+        yield sse_event("error", {"message": "聊天会话不存在"})
+        return
+
+    user_message = dao.get_latest_user_message(session=session)
+    if not user_message:
+        yield sse_event("error", {"message": "没有可重新生成的用户消息"})
+        return
+
+    previous_leaf_message_id = session.active_leaf_message_id
+    session = (
+        dao.set_active_leaf(
+            session_id=session.id,
+            user_id=current_user.id,
+            message_id=user_message.id,
+        )
+        or session
+    )
+
+    yield sse_event("session_ready", {"session": serialize_session(session)})
+    yield sse_event("branch_reset", {"parent_message_id": user_message.id})
+    async for event in _stream_assistant_for_user(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+        regenerate_source_message_id=previous_leaf_message_id,
+    ):
+        yield event
+
+
+async def _stream_assistant_for_user(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session: ChatSession,
+    user_message: ChatMessage,
+    regenerate_source_message_id: int | None = None,
+) -> AsyncIterator[str]:
+    history = dao.list_active_path(session=session)
     agent_input = build_agent_input(history)
     content_chunks: list[str] = []
     tool_calls: list[dict[str, Any]] = []
@@ -144,16 +253,41 @@ async def stream_chat(
         user_id=current_user.id,
         role="assistant",
         content=assistant_content,
+        parent_message_id=user_message.id,
+        source_message_id=regenerate_source_message_id,
+        version_index=(
+            dao.next_version_index(source_message_id=regenerate_source_message_id)
+            if regenerate_source_message_id is not None
+            else 1
+        ),
         tool_calls=tool_calls,
         parts=parts,
     )
     yield sse_event(
         "done",
         {
-            "message": serialize_message(assistant_message),
+            "message": serialize_message(assistant_message, dao),
             "session": serialize_session(session),
         },
     )
+
+
+def activate_message_version(
+    db: Session,
+    *,
+    current_user: User,
+    message_id: int,
+    target_message_id: int,
+) -> ChatSessionDetailOut:
+    dao = ChatDAO(db)
+    session = dao.activate_message_version(
+        message_id=message_id,
+        target_message_id=target_message_id,
+        user_id=current_user.id,
+    )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息版本不存在")
+    return get_session_detail(db, session_id=session.id, current_user=current_user)
 
 
 async def stream_agent_events(
@@ -224,6 +358,31 @@ def build_fallback_parts(
             }
         )
     return parts
+
+
+def build_version_info(message: ChatMessage, dao: ChatDAO | None) -> dict[str, int | None]:
+    if dao is None:
+        return {
+            "version_count": 1,
+            "version_position": 1,
+            "previous_version_message_id": None,
+            "next_version_message_id": None,
+        }
+
+    versions = dao.list_versions_for_message(message)
+    version_ids = [item.id for item in versions]
+    try:
+        index = version_ids.index(message.id)
+    except ValueError:
+        index = 0
+    return {
+        "version_count": len(versions),
+        "version_position": index + 1,
+        "previous_version_message_id": version_ids[index - 1] if index > 0 else None,
+        "next_version_message_id": (
+            version_ids[index + 1] if index + 1 < len(version_ids) else None
+        ),
+    }
 
 
 def sse_event(event: str, payload: dict[str, Any]) -> str:

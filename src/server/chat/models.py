@@ -17,6 +17,7 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
+    active_leaf_message_id: Mapped[int | None] = mapped_column(Integer, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -39,6 +40,9 @@ class ChatMessage(Base):
     session_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_message_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    source_message_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    version_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tool_calls_json: Mapped[str | None] = mapped_column(Text, default=None)
@@ -47,4 +51,7 @@ class ChatMessage(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
     )

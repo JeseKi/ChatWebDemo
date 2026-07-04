@@ -109,6 +109,64 @@ async def delete_session(
     return await run_in_thread(_delete)
 
 
+@router.post("/messages/{message_id}/edit-stream", summary="编辑用户消息并重新生成")
+async def edit_message_stream(
+    message_id: int,
+    payload: ChatStreamRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    return StreamingResponse(
+        service.stream_edit_message(
+            db,
+            current_user=current_user,
+            message_id=message_id,
+            message=payload.message,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/sessions/{session_id}/regenerate-stream", summary="重新生成最新回复")
+async def regenerate_stream(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    return StreamingResponse(
+        service.stream_regenerate(
+            db,
+            current_user=current_user,
+            session_id=session_id,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/messages/{message_id}/versions/{target_message_id}/activate",
+    response_model=ChatSessionDetailOut,
+    summary="切换消息版本",
+)
+async def activate_message_version(
+    message_id: int,
+    target_message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    def _activate():
+        return service.activate_message_version(
+            db,
+            current_user=current_user,
+            message_id=message_id,
+            target_message_id=target_message_id,
+        )
+
+    return await run_in_thread(_activate)
+
+
 @router.post("/stream", summary="流式发送聊天消息")
 async def stream_message(
     payload: ChatStreamRequest,

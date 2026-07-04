@@ -31,6 +31,13 @@ export interface ChatMessage {
   session_id: string
   role: ChatRole
   content: string
+  parent_message_id: number | null
+  source_message_id: number | null
+  version_index: number
+  version_count: number
+  version_position: number
+  previous_version_message_id: number | null
+  next_version_message_id: number | null
   tool_calls: ToolCallTrace[]
   parts: AssistantMessagePart[]
   sequence: number
@@ -40,6 +47,7 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string
   title: string
+  active_leaf_message_id: number | null
   created_at: string
   updated_at: string
 }
@@ -50,6 +58,7 @@ export interface ChatSessionDetail extends ChatSession {
 
 export type ChatStreamEvent =
   | { type: 'session_ready'; session: ChatSession }
+  | { type: 'branch_reset'; parent_message_id: number | null; message_id?: number }
   | { type: 'user_message'; message: ChatMessage }
   | { type: 'content_delta'; part_id: string; delta: string }
   | { type: 'tool_call_started'; tool_call: ToolCallTrace }
@@ -85,21 +94,60 @@ export async function streamChatMessage(params: {
   signal?: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }): Promise<void> {
-  const response = await sendStreamRequest(params, false)
+  const response = await sendStreamRequest('/chat/stream', {
+    session_id: params.sessionId || null,
+    message: params.message,
+  }, params, false)
   await consumeEventStream(response, params.onEvent)
 }
 
+export async function editChatMessage(params: {
+  messageId: number
+  message: string
+  signal?: AbortSignal
+  onEvent: (event: ChatStreamEvent) => void
+}): Promise<void> {
+  const response = await sendStreamRequest(`/chat/messages/${params.messageId}/edit-stream`, {
+    message: params.message,
+  }, params, false)
+  await consumeEventStream(response, params.onEvent)
+}
+
+export async function regenerateChatSession(params: {
+  sessionId: string
+  signal?: AbortSignal
+  onEvent: (event: ChatStreamEvent) => void
+}): Promise<void> {
+  const response = await sendStreamRequest(
+    `/chat/sessions/${params.sessionId}/regenerate-stream`,
+    {},
+    params,
+    false,
+  )
+  await consumeEventStream(response, params.onEvent)
+}
+
+export async function activateChatMessageVersion(
+  messageId: number,
+  targetMessageId: number,
+): Promise<ChatSessionDetail> {
+  const { data } = await api.post<ChatSessionDetail>(
+    `/chat/messages/${messageId}/versions/${targetMessageId}/activate`,
+  )
+  return data
+}
+
 async function sendStreamRequest(
+  path: string,
+  body: Record<string, unknown>,
   params: {
-    sessionId?: string | null
-    message: string
     signal?: AbortSignal
     onEvent: (event: ChatStreamEvent) => void
   },
   alreadyRetried: boolean,
 ): Promise<Response> {
   const token = getAccessToken()
-  const response = await fetch(`${getApiBaseUrl()}/chat/stream`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'POST',
     credentials: 'include',
     signal: params.signal,
@@ -107,16 +155,13 @@ async function sendStreamRequest(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({
-      session_id: params.sessionId || null,
-      message: params.message,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (response.status === 401 && !alreadyRetried) {
     const refreshedToken = await refreshAccessToken()
     if (refreshedToken) {
-      return sendStreamRequest(params, true)
+      return sendStreamRequest(path, body, params, true)
     }
   }
 

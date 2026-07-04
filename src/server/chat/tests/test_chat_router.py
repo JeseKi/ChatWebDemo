@@ -156,6 +156,116 @@ def test_update_and_delete_chat_session(
     assert list_after_delete_resp.json() == []
 
 
+def test_edit_user_message_creates_active_branch(
+    test_client, test_db_session, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="旧回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "旧问题"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    create_done = _parse_sse(create_resp.text)[-1]["data"]
+    session_id = create_done["session"]["id"]
+
+    detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
+    old_user_id = detail_resp.json()["messages"][0]["id"]
+
+    async def edited_agent(prompt: str, *, user_id: str, session_id: str):
+        assert "新问题" in prompt
+        assert "旧回复" not in prompt
+        yield SimpleNamespace(event="RunContent", content="新回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", edited_agent)
+    edit_resp = test_client.post(
+        f"/api/chat/messages/{old_user_id}/edit-stream",
+        json={"message": "新问题"},
+        headers=headers,
+    )
+    assert edit_resp.status_code == HTTPStatus.OK, edit_resp.text
+    edit_events = _parse_sse(edit_resp.text)
+    assert "branch_reset" in [event["event"] for event in edit_events]
+
+    detail_after_edit_resp = test_client.get(
+        f"/api/chat/sessions/{session_id}", headers=headers
+    )
+    assert detail_after_edit_resp.status_code == HTTPStatus.OK, detail_after_edit_resp.text
+    active_messages = detail_after_edit_resp.json()["messages"]
+    assert [message["content"] for message in active_messages] == ["新问题", "新回复"]
+    assert active_messages[0]["source_message_id"] == old_user_id
+    assert active_messages[0]["version_index"] == 2
+    assert active_messages[0]["version_count"] == 2
+    assert active_messages[0]["previous_version_message_id"] == old_user_id
+    assert test_db_session.query(ChatMessage).filter(ChatMessage.session_id == session_id).count() == 4
+
+    switch_resp = test_client.post(
+        f"/api/chat/messages/{active_messages[0]['id']}/versions/{old_user_id}/activate",
+        headers=headers,
+    )
+    assert switch_resp.status_code == HTTPStatus.OK, switch_resp.text
+    switched_messages = switch_resp.json()["messages"]
+    assert [message["content"] for message in switched_messages] == ["旧问题", "旧回复"]
+    assert switched_messages[0]["next_version_message_id"] == active_messages[0]["id"]
+
+
+def test_regenerate_replaces_latest_assistant_branch(
+    test_client, test_db_session, init_test_database, monkeypatch
+):
+    headers = _login_admin(test_client)
+
+    async def first_agent(prompt: str, *, user_id: str, session_id: str):
+        yield SimpleNamespace(event="RunContent", content="第一次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    create_resp = test_client.post(
+        "/api/chat/stream",
+        json={"message": "请回答"},
+        headers=headers,
+    )
+    assert create_resp.status_code == HTTPStatus.OK, create_resp.text
+    create_done = _parse_sse(create_resp.text)[-1]["data"]
+    session_id = create_done["session"]["id"]
+    old_assistant_id = create_done["message"]["id"]
+
+    async def regenerated_agent(prompt: str, *, user_id: str, session_id: str):
+        assert "请回答" in prompt
+        assert "第一次回复" not in prompt
+        yield SimpleNamespace(event="RunContent", content="第二次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", regenerated_agent)
+    regenerate_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/regenerate-stream",
+        headers=headers,
+    )
+    assert regenerate_resp.status_code == HTTPStatus.OK, regenerate_resp.text
+    regenerate_events = _parse_sse(regenerate_resp.text)
+    assert regenerate_events[1]["event"] == "branch_reset"
+
+    detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
+    active_messages = detail_resp.json()["messages"]
+    assert [message["content"] for message in active_messages] == ["请回答", "第二次回复"]
+    assert active_messages[1]["source_message_id"] == old_assistant_id
+    assert active_messages[1]["version_index"] == 2
+    assert active_messages[1]["version_count"] == 2
+    assert active_messages[1]["previous_version_message_id"] == old_assistant_id
+    assert test_db_session.query(ChatMessage).filter(ChatMessage.session_id == session_id).count() == 3
+
+    switch_resp = test_client.post(
+        f"/api/chat/messages/{active_messages[1]['id']}/versions/{old_assistant_id}/activate",
+        headers=headers,
+    )
+    assert switch_resp.status_code == HTTPStatus.OK, switch_resp.text
+    switched_messages = switch_resp.json()["messages"]
+    assert [message["content"] for message in switched_messages] == ["请回答", "第一次回复"]
+    assert switched_messages[1]["next_version_message_id"] == active_messages[1]["id"]
+
+
 def test_chat_requires_authentication(test_client):
     resp = test_client.get("/api/chat/sessions")
     assert resp.status_code == HTTPStatus.UNAUTHORIZED

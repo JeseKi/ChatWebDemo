@@ -43,6 +43,13 @@ class ChatMessageOut(BaseModel):
     session_id: str = Field(..., pattern=CHAT_SESSION_ID_PATTERN)
     role: ChatRole
     content: str
+    parent_message_id: int | None = None
+    source_message_id: int | None = None
+    version_index: int = 1
+    version_count: int = 1
+    version_position: int = 1
+    previous_version_message_id: int | None = None
+    next_version_message_id: int | None = None
     tool_calls: list[ToolCallTrace] = Field(default_factory=list)
     parts: list[AssistantMessagePart] = Field(default_factory=list)
     sequence: int
@@ -52,6 +59,7 @@ class ChatMessageOut(BaseModel):
 class ChatSessionOut(BaseModel):
     id: str = Field(..., pattern=CHAT_SESSION_ID_PATTERN)
     title: str
+    active_leaf_message_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
