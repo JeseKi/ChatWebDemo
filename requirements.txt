@@ -124,6 +124,8 @@ python-dotenv==1.0.1
     #   pydantic-settings
 python-jose==3.3.0
     # via -r requirements.in
+python-multipart==0.0.32
+    # via -r requirements.in
 requests==2.34.2
     # via
     #   google-auth

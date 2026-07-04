@@ -38,6 +38,8 @@ export interface ChatMessage {
   session_id: string
   role: ChatRole
   content: string
+  model_id: string | null
+  thinking_effort: string | null
   parent_message_id: number | null
   source_message_id: number | null
   version_index: number
@@ -49,6 +51,41 @@ export interface ChatMessage {
   parts: AssistantMessagePart[]
   sequence: number
   created_at: string
+}
+
+export type ChatModelIconMode = 'auto' | 'mask' | 'image'
+
+export interface ChatModelIconConfig {
+  light?: string | null
+  dark?: string | null
+  mode?: ChatModelIconMode
+}
+
+export type ChatModelIcon = string | ChatModelIconConfig | null
+
+export interface ChatModel {
+  provider: string
+  id: string
+  name: string
+  icon: ChatModelIcon
+  context: number
+  max_output: number
+  visual: boolean
+  thinking: Record<string, string>
+  keep_thinking_content: boolean
+}
+
+export interface ChatModelsResponse {
+  models: ChatModel[]
+  last_error: string | null
+}
+
+export interface ChatImage {
+  image_id: string
+  url: string
+  mime_type: string
+  width: number
+  height: number
 }
 
 export interface ChatSession {
@@ -92,6 +129,20 @@ export type ChatStreamEvent =
   | { type: 'error'; message: string }
   | { type: 'done'; message: ChatMessage; session: ChatSession }
 
+export async function listChatModels(): Promise<ChatModelsResponse> {
+  const { data } = await api.get<ChatModelsResponse>('/chat/models')
+  return data
+}
+
+export async function uploadChatImage(file: File): Promise<ChatImage> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await api.post<ChatImage>('/chat/images', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
+
 export async function listChatSessions(): Promise<ChatSession[]> {
   const { data } = await api.get<ChatSession[]>('/chat/sessions')
   return data
@@ -127,12 +178,24 @@ export async function getSharedChatSession(token: string): Promise<SharedChatSes
 export async function streamChatMessage(params: {
   sessionId?: string | null
   message: string
+  model?: string | null
+  variant?: string | null
+  images?: ChatImage[]
   signal?: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }): Promise<void> {
   const response = await sendStreamRequest('/chat/stream', {
     session_id: params.sessionId || null,
     message: params.message,
+    model: params.model ?? null,
+    variant: params.variant ?? null,
+    images: (params.images ?? []).map((image) => ({
+      image_id: image.image_id,
+      url: image.url,
+      mime_type: image.mime_type,
+      width: image.width,
+      height: image.height,
+    })),
   }, params, false)
   await consumeEventStream(response, params.onEvent)
 }
@@ -140,23 +203,32 @@ export async function streamChatMessage(params: {
 export async function editChatMessage(params: {
   messageId: number
   message: string
+  model?: string | null
+  variant?: string | null
   signal?: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }): Promise<void> {
   const response = await sendStreamRequest(`/chat/messages/${params.messageId}/edit-stream`, {
     message: params.message,
+    model: params.model ?? null,
+    variant: params.variant ?? null,
   }, params, false)
   await consumeEventStream(response, params.onEvent)
 }
 
 export async function regenerateChatSession(params: {
   sessionId: string
+  model?: string | null
+  variant?: string | null
   signal?: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }): Promise<void> {
   const response = await sendStreamRequest(
     `/chat/sessions/${params.sessionId}/regenerate-stream`,
-    {},
+    {
+      model: params.model ?? null,
+      variant: params.variant ?? null,
+    },
     params,
     false,
   )

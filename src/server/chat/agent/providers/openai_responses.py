@@ -22,9 +22,18 @@ from ..tools import AgentTool
 class OpenAIResponsesProvider(LLMProvider):
     name = "openai_responses"
 
-    def __init__(self, *, client: AsyncOpenAI, model_id: str):
+    def __init__(
+        self,
+        *,
+        client: AsyncOpenAI,
+        model_id: str,
+        max_output: int | None = None,
+        reasoning_effort: str | None = None,
+    ):
         self.client = client
         self.model_id = model_id
+        self.max_output = max_output
+        self.reasoning_effort = reasoning_effort
 
     async def stream_turn(
         self,
@@ -45,6 +54,10 @@ class OpenAIResponsesProvider(LLMProvider):
         if allow_tools:
             request_params["tools"] = [_responses_tool(tool) for tool in tools]
             request_params["tool_choice"] = "auto"
+        if self.max_output is not None:
+            request_params["max_output_tokens"] = self.max_output
+        if self.reasoning_effort:
+            request_params["reasoning"] = {"effort": self.reasoning_effort}
 
         stream = await self.client.responses.create(**request_params)
         calls: dict[int, dict[str, Any]] = {}
@@ -181,7 +194,15 @@ def _to_response_input(messages: list[LLMMessage]) -> tuple[str | None, list[dic
             elif message.content:
                 input_items.append({"role": "assistant", "content": message.content})
             continue
-        input_items.append({"role": "user", "content": message.content or ""})
+        if message.images:
+            content: list[dict[str, Any]] = []
+            if message.content:
+                content.append({"type": "input_text", "text": message.content})
+            for image in message.images:
+                content.append({"type": "input_image", "image_url": image.data_url})
+            input_items.append({"role": "user", "content": content})
+        else:
+            input_items.append({"role": "user", "content": message.content or ""})
     return instructions, input_items
 
 
@@ -207,4 +228,3 @@ def _to_plain_dict(value: Any) -> dict[str, Any]:
         dumped = value.to_dict()
         return dumped if isinstance(dumped, dict) else {}
     return {}
-

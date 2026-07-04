@@ -34,3 +34,4 @@ sample
 
 # data
 data/*
+!data/models.json.example

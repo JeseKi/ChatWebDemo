@@ -19,9 +19,18 @@ from ..tools import AgentTool
 class GoogleGeminiProvider(LLMProvider):
     name = "google"
 
-    def __init__(self, *, api_key: str, model_id: str):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model_id: str,
+        max_output: int | None = None,
+        base_url: str | None = None,
+    ):
         self.api_key = api_key
         self.model_id = model_id
+        self.max_output = max_output
+        self.base_url = base_url
         self._client: Any | None = None
         self._types: Any | None = None
 
@@ -33,10 +42,16 @@ class GoogleGeminiProvider(LLMProvider):
                 from google.genai import types
             except ModuleNotFoundError as exc:  # pragma: no cover - environment setup
                 raise RuntimeError(
-                    "google-genai package is required for LLM_PROVIDER=google"
+                    "google-genai package is required for Google chat models"
                 ) from exc
-            self._client = genai.Client(api_key=self.api_key)
             self._types = types
+            http_options = (
+                types.HttpOptions(base_url=self.base_url) if self.base_url else None
+            )
+            self._client = genai.Client(
+                api_key=self.api_key,
+                http_options=http_options,
+            )
         return self._client
 
     @property
@@ -56,6 +71,8 @@ class GoogleGeminiProvider(LLMProvider):
         config_kwargs: dict[str, Any] = {
             "system_instruction": system_instruction,
         }
+        if self.max_output is not None:
+            config_kwargs["max_output_tokens"] = self.max_output
         if allow_tools:
             config_kwargs["tools"] = [_google_tool_config(tools, self.types)]
 
@@ -146,12 +163,14 @@ def _to_google_contents(
                     )
                 )
             continue
-        contents.append(
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=message.content or "")],
-            )
-        )
+        parts = []
+        if message.content:
+            parts.append(types.Part.from_text(text=message.content))
+        for image in message.images:
+            parts.append(types.Part.from_bytes(data=image.data_bytes, mime_type=image.mime_type))
+        if not parts:
+            parts.append(types.Part.from_text(text=""))
+        contents.append(types.Content(role="user", parts=parts))
     return contents, system_instruction
 
 
@@ -176,4 +195,3 @@ def _extract_google_function_calls(chunk: Any) -> list[Any]:
             if function_call is not None:
                 calls.append(function_call)
     return calls
-

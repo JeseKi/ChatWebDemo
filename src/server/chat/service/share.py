@@ -18,6 +18,15 @@ from src.server.config import global_config
 from ..dao import ChatDAO, ChatShareDAO
 from ..models import ChatSessionShare
 from ..schemas import ChatMessageOut, ChatSessionShareOut, SharedChatSessionOut
+from .images import (
+    IMAGE_CLOSE,
+    IMAGE_OPEN,
+    StoredImage,
+    extract_image_urls,
+    get_user_image,
+    image_id_from_url,
+    share_image_url,
+)
 from .serializers import serialize_message
 
 SHARE_TOKEN_SIGNATURE_LENGTH = 16
@@ -96,7 +105,7 @@ def get_shared_session(db: Session, *, token: str) -> SharedChatSessionOut:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="分享不存在")
     snapshot = _load_snapshot(share.snapshot_json)
     messages = [
-        ChatMessageOut.model_validate(message)
+        ChatMessageOut.model_validate(_rewrite_message_images_for_share(message, token))
         for message in snapshot.get("messages", [])
         if isinstance(message, dict)
     ]
@@ -111,6 +120,67 @@ def get_shared_session(db: Session, *, token: str) -> SharedChatSessionOut:
             "messages": messages,
         }
     )
+
+
+def get_shared_image(db: Session, *, token: str, image_id: str) -> StoredImage:
+    share = _validated_share(db, token)
+    snapshot = _load_snapshot(share.snapshot_json)
+    allowed = False
+    for message in snapshot.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+        content = str(message.get("content") or "")
+        for url in extract_image_urls(content):
+            if image_id_from_url(url) == image_id:
+                allowed = True
+                break
+        if allowed:
+            break
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
+    stored = get_user_image(share.owner_user_id, image_id)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
+    return stored
+
+
+def _validated_share(db: Session, token: str) -> ChatSessionShare:
+    share_id = _share_id_from_token(token)
+    if share_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="分享不存在")
+
+    share = ChatShareDAO(db).get_session_share_by_id(share_id)
+    if not share:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="分享不存在")
+    source_session = ChatDAO(db).get_session(
+        session_id=share.source_session_id,
+        user_id=share.owner_user_id,
+    )
+    if not source_session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="分享不存在")
+    expected_token = _create_share_token(
+        share_id=share.id,
+        source_session_id=share.source_session_id,
+        snapshot_json=share.snapshot_json,
+    )
+    if not hmac.compare_digest(expected_token, token):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="分享不存在")
+    return share
+
+
+def _rewrite_message_images_for_share(message: dict[str, Any], token: str) -> dict[str, Any]:
+    rewritten = dict(message)
+    content = str(rewritten.get("content") or "")
+    for url in extract_image_urls(content):
+        image_id = image_id_from_url(url)
+        if not image_id:
+            continue
+        content = content.replace(
+            f"{IMAGE_OPEN}{url}{IMAGE_CLOSE}",
+            f"{IMAGE_OPEN}{share_image_url(token, image_id)}{IMAGE_CLOSE}",
+        )
+    rewritten["content"] = content
+    return rewritten
 
 
 def _share_out(share: ChatSessionShare, *, token: str) -> ChatSessionShareOut:

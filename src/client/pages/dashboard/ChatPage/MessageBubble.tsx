@@ -1,4 +1,4 @@
-import { Button, Flex, Input, Skeleton, Space, Tooltip, Typography, theme } from 'antd'
+import { Button, Flex, Input, Skeleton, Space, Tooltip, theme } from 'antd'
 import {
   CheckOutlined,
   EditOutlined,
@@ -11,6 +11,9 @@ import { STREAMING_MESSAGE_ID } from './constants'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
 import VersionSwitcher from './VersionSwitcher'
+import MessageContent from './MessageContent'
+
+const IMAGE_PATTERN = /<\|IMAGE\|>.*?<\/\|IMAGE\|>/
 
 export default function MessageBubble({
   message,
@@ -146,14 +149,7 @@ function UserMessageView({
 }) {
   return (
     <Flex vertical gap={6}>
-      <Typography.Text
-        style={{
-          whiteSpace: 'pre-wrap',
-          overflowWrap: 'anywhere',
-        }}
-      >
-        {message.content}
-      </Typography.Text>
+      <MessageContent content={message.content} />
       <Space size={4} style={{ alignSelf: 'flex-end' }}>
         <VersionSwitcher
           message={message}
@@ -166,7 +162,7 @@ function UserMessageView({
             size="small"
             type="text"
             icon={<EditOutlined />}
-            disabled={streaming}
+            disabled={streaming || IMAGE_PATTERN.test(message.content)}
             onClick={() => onStartEditingMessage(message)}
           />
         </Tooltip>

@@ -30,10 +30,12 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
         *,
         client: AsyncOpenAI,
         model_id: str,
+        max_output: int | None = None,
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
     ):
         super().__init__(client=client, model_id=model_id, stream_options={})
+        self.max_output = max_output
         self.reasoning_effort = reasoning_effort
         self.thinking_enabled = thinking_enabled
 
@@ -53,6 +55,8 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
         }
         if self.reasoning_effort:
             request_params["reasoning_effort"] = self.reasoning_effort
+        if self.max_output is not None:
+            request_params["max_tokens"] = self.max_output
         if self.thinking_enabled is not None:
             request_params["extra_body"] = {
                 "thinking": {
@@ -102,4 +106,3 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
         if message.tool_calls and message.content is None:
             message.content = ""
         return message
-

@@ -26,10 +26,24 @@ class LLMToolCall:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class LLMImage:
+    mime_type: str
+    base64_data: str
+    data_bytes: bytes
+    width: int
+    height: int
+
+    @property
+    def data_url(self) -> str:
+        return f"data:{self.mime_type};base64,{self.base64_data}"
+
+
 @dataclass
 class LLMMessage:
     role: AgentRole
     content: str | None = None
+    images: list[LLMImage] = field(default_factory=list)
     tool_calls: list[LLMToolCall] = field(default_factory=list)
     tool_call_id: str | None = None
     name: str | None = None
@@ -67,10 +81,11 @@ class LLMProvider(ABC):
         *,
         instructions: str,
         prompt: str,
+        images: list[LLMImage] | None = None,
     ) -> list[LLMMessage]:
         return [
             LLMMessage(role="system", content=instructions),
-            LLMMessage(role="user", content=prompt),
+            LLMMessage(role="user", content=prompt, images=images or []),
         ]
 
     def build_assistant_message(

@@ -1,9 +1,10 @@
-import { Flex, Space, Typography, theme } from 'antd'
+import { Flex, Space, theme } from 'antd'
 import type { AssistantMessagePart, ChatMessage } from '../../../lib/chat'
 import AssistantReasoningTrace from './AssistantReasoningTrace'
 import AssistantToolTrace from './AssistantToolTrace'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
+import MessageContent from './MessageContent'
 
 export default function SharedMessageBubble({ message }: { message: ChatMessage }) {
   const { token } = theme.useToken()
@@ -23,9 +24,7 @@ export default function SharedMessageBubble({ message }: { message: ChatMessage 
       >
         {isUser ? (
           <Flex vertical gap={6}>
-            <Typography.Text style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-              {message.content}
-            </Typography.Text>
+            <MessageContent content={message.content} shared />
             <Space size={4} style={{ alignSelf: 'flex-end' }}>
               <CopyButton text={message.content} />
             </Space>

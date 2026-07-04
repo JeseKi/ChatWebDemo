@@ -45,6 +45,8 @@ class ChatMessage(Base):
     version_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(120), default=None)
+    thinking_effort: Mapped[str | None] = mapped_column(String(80), default=None)
     tool_calls_json: Mapped[str | None] = mapped_column(Text, default=None)
     parts_json: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(

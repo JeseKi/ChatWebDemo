@@ -4,6 +4,7 @@ import AssistantReasoningTrace from './AssistantReasoningTrace'
 import AssistantToolTrace from './AssistantToolTrace'
 import CopyButton from './CopyButton'
 import MarkdownOutput from './MarkdownOutput'
+import MessageContent from './MessageContent'
 
 export default function ShareSessionModal({
   open,
@@ -84,7 +85,7 @@ function PreviewMessage({ message }: { message: ChatMessage }) {
             )}
           </Flex>
         ) : (
-          <MarkdownOutput content={message.content || ' '} />
+          <MessageContent content={message.content || ' '} />
         )}
       </div>
     </Flex>

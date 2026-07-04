@@ -210,6 +210,8 @@ class ChatDAO(BaseDAO):
         user_id: int,
         role: str,
         content: str,
+        model_id: str | None = None,
+        thinking_effort: str | None = None,
         parent_message_id: int | None = None,
         source_message_id: int | None = None,
         version_index: int = 1,
@@ -231,6 +233,8 @@ class ChatDAO(BaseDAO):
             version_index=version_index,
             role=role,
             content=content,
+            model_id=model_id,
+            thinking_effort=thinking_effort,
             tool_calls_json=_dump_tool_calls(tool_calls),
             parts_json=_dump_json_list(parts),
         )

@@ -88,6 +88,27 @@ def disable_real_mail_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mail_config, "sender_password", None, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def configure_test_chat_models() -> Iterator[None]:
+    from src.server.chat.service import model_catalog
+
+    model_catalog.replace_models_for_tests(
+        [
+            {
+                "provider": "openai_chat",
+                "id": "test-model",
+                "name": "Test Model",
+                "context": 128000,
+                "max_output": 4096,
+                "visual": True,
+                "thinking": {"low": "低"},
+                "keep_thinking_content": False,
+            }
+        ]
+    )
+    yield
+
+
 @pytest.fixture(scope="function")
 def test_db_engine() -> Iterator[Connection]:
     """提供共享内存 SQLite 连接（保持连接存活，保证多线程一致）。"""

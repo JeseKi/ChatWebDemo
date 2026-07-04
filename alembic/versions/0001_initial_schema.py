@@ -74,6 +74,8 @@ def upgrade() -> None:
         sa.Column("version_index", sa.Integer(), nullable=False),
         sa.Column("role", sa.String(length=20), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("model_id", sa.String(length=120), nullable=True),
+        sa.Column("thinking_effort", sa.String(length=80), nullable=True),
         sa.Column("tool_calls_json", sa.Text(), nullable=True),
         sa.Column("parts_json", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

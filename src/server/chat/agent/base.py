@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from .contracts import LLMMessage, LLMProvider, LLMToolCall
+from .contracts import LLMImage, LLMMessage, LLMProvider, LLMToolCall
 from .tools import AgentTool
 
 
@@ -45,11 +45,13 @@ class BaseAgent:
         instructions: str,
         tools: list[AgentTool] | None = None,
         max_tool_calls: int = 4,
+        keep_thinking_content: bool = False,
     ):
         self.provider = provider
         self.instructions = instructions
         self.tools = tools or []
         self.max_tool_calls = max_tool_calls
+        self.keep_thinking_content = keep_thinking_content
         self.tool_specs = [tool.spec for tool in self.tools]
         self._tool_map = {tool.name: tool for tool in self.tools}
 
@@ -58,11 +60,22 @@ class BaseAgent:
         prompt: str,
         *,
         user_id: str,
+        images: list[LLMImage] | None = None,
     ) -> AsyncIterator[ChatRunEvent]:
         messages = self.provider.build_initial_messages(
             instructions=self.instructions,
             prompt=prompt,
+            images=images,
         )
+        async for event in self.arun_messages(messages, user_id=user_id):
+            yield event
+
+    async def arun_messages(
+        self,
+        messages: list[LLMMessage],
+        *,
+        user_id: str,
+    ) -> AsyncIterator[ChatRunEvent]:
         tool_calls_used = 0
 
         while True:
@@ -106,7 +119,9 @@ class BaseAgent:
             messages.append(
                 self.provider.build_assistant_message(
                     content=assistant_content,
-                    reasoning_content=reasoning_content,
+                    reasoning_content=(
+                        reasoning_content if self.keep_thinking_content else None
+                    ),
                     tool_calls=tool_calls,
                     provider_metadata=provider_metadata,
                 )
@@ -184,4 +199,3 @@ class BaseAgent:
             arguments=tool_call.arguments,
             output=output,
         )
-

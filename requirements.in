@@ -3,6 +3,7 @@ ruff
 ty
 mypy
 fastapi
+python-multipart
 uvicorn
 sqlalchemy
 pydantic

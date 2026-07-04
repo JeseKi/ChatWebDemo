@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Agent provider factory driven by LLM_* environment settings."""
+"""Agent provider factory driven by model catalog settings and provider credentials."""
 
 from __future__ import annotations
 
 import os
-from typing import Literal
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -15,31 +15,20 @@ from .providers.google import GoogleGeminiProvider
 from .providers.openai_chat import OpenAIChatCompletionsProvider
 from .providers.openai_responses import OpenAIResponsesProvider
 
-LLMProviderName = Literal[
-    "openai_chat",
-    "openai_responses",
-    "deepseek",
-    "anthropic",
-    "google",
-]
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
-DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
-DEFAULT_GOOGLE_MODEL = "gemini-3.5-flash"
-
-
-def build_llm_provider() -> LLMProvider:
-    provider = _provider_name()
-    model_override = _env("LLM_MODEL")
-
+def build_llm_provider(
+    model_config: Any,
+    thinking_effort: str | None = None,
+) -> LLMProvider:
+    provider = model_config.provider
     if provider == "openai_chat":
         api_key = _required_env("LLM_OPENAI_API_KEY")
         base_url = _env("LLM_OPENAI_BASE_URL")
         return OpenAIChatCompletionsProvider(
             client=AsyncOpenAI(api_key=api_key, base_url=base_url or None),
-            model_id=model_override or _env("LLM_OPENAI_MODEL") or DEFAULT_OPENAI_MODEL,
+            model_id=model_config.id,
+            max_output=model_config.max_output,
+            reasoning_effort=thinking_effort,
         )
 
     if provider == "openai_responses":
@@ -47,7 +36,9 @@ def build_llm_provider() -> LLMProvider:
         base_url = _env("LLM_OPENAI_BASE_URL")
         return OpenAIResponsesProvider(
             client=AsyncOpenAI(api_key=api_key, base_url=base_url or None),
-            model_id=model_override or _env("LLM_OPENAI_MODEL") or DEFAULT_OPENAI_MODEL,
+            model_id=model_config.id,
+            max_output=model_config.max_output,
+            reasoning_effort=thinking_effort,
         )
 
     if provider == "deepseek":
@@ -55,37 +46,31 @@ def build_llm_provider() -> LLMProvider:
         return DeepSeekProvider(
             client=AsyncOpenAI(
                 api_key=api_key,
-                base_url=_env("LLM_DEEPSEEK_BASE_URL") or DEFAULT_DEEPSEEK_BASE_URL,
+                base_url=_required_env("LLM_DEEPSEEK_BASE_URL"),
             ),
-            model_id=model_override
-            or _env("LLM_DEEPSEEK_MODEL")
-            or DEFAULT_DEEPSEEK_MODEL,
-            reasoning_effort=_env("LLM_DEEPSEEK_REASONING_EFFORT"),
-            thinking_enabled=_optional_bool("LLM_DEEPSEEK_THINKING_ENABLED"),
+            model_id=model_config.id,
+            max_output=model_config.max_output,
+            reasoning_effort=thinking_effort,
+            thinking_enabled=True if thinking_effort else None,
         )
 
     if provider == "anthropic":
         return AnthropicProvider(
             api_key=_required_env("LLM_ANTHROPIC_API_KEY"),
-            model_id=model_override
-            or _env("LLM_ANTHROPIC_MODEL")
-            or DEFAULT_ANTHROPIC_MODEL,
+            base_url=_env("LLM_ANTHROPIC_BASE_URL") or None,
+            model_id=model_config.id,
+            max_output=model_config.max_output,
         )
 
     if provider == "google":
         return GoogleGeminiProvider(
             api_key=_required_env("LLM_GOOGLE_API_KEY"),
-            model_id=model_override or _env("LLM_GOOGLE_MODEL") or DEFAULT_GOOGLE_MODEL,
+            base_url=_env("LLM_GOOGLE_BASE_URL") or None,
+            model_id=model_config.id,
+            max_output=model_config.max_output,
         )
 
-    raise RuntimeError(f"Unsupported LLM_PROVIDER: {provider}")
-
-
-def _provider_name() -> LLMProviderName:
-    raw = (_env("LLM_PROVIDER") or "openai_chat").lower()
-    if raw in {"openai_chat", "openai_responses", "deepseek", "anthropic", "google"}:
-        return raw  # type: ignore[return-value]
-    raise RuntimeError(f"Unsupported LLM_PROVIDER: {raw}")
+    raise RuntimeError(f"Unsupported chat model provider: {provider}")
 
 
 def _env(name: str) -> str:
@@ -97,14 +82,3 @@ def _required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing {name}")
     return value
-
-
-def _optional_bool(name: str) -> bool | None:
-    value = _env(name).lower()
-    if not value:
-        return None
-    if value in {"1", "true", "yes", "on", "enabled"}:
-        return True
-    if value in {"0", "false", "no", "off", "disabled"}:
-        return False
-    raise RuntimeError(f"{name} must be a boolean value")

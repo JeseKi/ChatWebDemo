@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Security, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Security, UploadFile, status
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.server.auth.dependencies import get_current_user
@@ -16,6 +16,10 @@ from src.server.database import get_db
 from . import service
 from .dao import ChatDAO
 from .schemas import (
+    ChatImageOut,
+    ChatModelOut,
+    ChatModelsResponse,
+    ChatRegenerateRequest,
     ChatSessionDetailOut,
     ChatSessionOut,
     ChatSessionShareOut,
@@ -23,8 +27,47 @@ from .schemas import (
     ChatStreamRequest,
     SharedChatSessionOut,
 )
+from .service import images as image_service
+from .service import model_catalog
 
 router = APIRouter(prefix="/api/chat", tags=["ChatWeb"])
+
+
+@router.get("/models", response_model=ChatModelsResponse, summary="列出可用模型")
+async def list_models(
+    _: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    snapshot = model_catalog.snapshot()
+    return ChatModelsResponse(
+        models=[ChatModelOut.model_validate(model.model_dump()) for model in snapshot.models],
+        last_error=snapshot.last_error,
+    )
+
+
+@router.post("/images", response_model=ChatImageOut, summary="上传聊天图片")
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    stored = await image_service.store_upload(current_user.id, file)
+    return ChatImageOut(
+        image_id=stored.image_id,
+        url=stored.url,
+        mime_type=stored.mime_type,
+        width=stored.width,
+        height=stored.height,
+    )
+
+
+@router.get("/images/{image_id}", summary="读取聊天图片")
+async def get_image(
+    image_id: str,
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    stored = image_service.get_user_image(current_user.id, image_id)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="图片不存在")
+    return FileResponse(stored.path, media_type=stored.mime_type)
 
 
 @router.get(
@@ -40,6 +83,19 @@ async def get_shared_session(
         return service.get_shared_session(db, token=token)
 
     return await run_in_thread(_get)
+
+
+@router.get("/shares/{token}/images/{image_id}", summary="读取分享中的聊天图片")
+async def get_shared_image(
+    token: str,
+    image_id: str,
+    db: Session = Depends(get_db),
+):
+    def _get():
+        return service.get_shared_image(db, token=token, image_id=image_id)
+
+    stored = await run_in_thread(_get)
+    return FileResponse(stored.path, media_type=stored.mime_type)
 
 
 @router.get("/sessions", response_model=list[ChatSessionOut], summary="列出聊天会话")
@@ -159,6 +215,9 @@ async def edit_message_stream(
             current_user=current_user,
             message_id=message_id,
             message=payload.message,
+            model_id=payload.model,
+            thinking_effort=payload.variant,
+            images=payload.images,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -168,6 +227,7 @@ async def edit_message_stream(
 @router.post("/sessions/{session_id}/regenerate-stream", summary="重新生成最新回复")
 async def regenerate_stream(
     session_id: str,
+    payload: ChatRegenerateRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
 ):
@@ -176,6 +236,8 @@ async def regenerate_stream(
             db,
             current_user=current_user,
             session_id=session_id,
+            model_id=payload.model if payload else None,
+            thinking_effort=payload.variant if payload else None,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -222,6 +284,9 @@ async def stream_message(
             current_user=current_user,
             message=payload.message,
             session_id=payload.session_id,
+            model_id=payload.model,
+            thinking_effort=payload.variant,
+            images=payload.images,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

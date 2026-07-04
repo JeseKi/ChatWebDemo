@@ -19,9 +19,18 @@ from ..tools import AgentTool
 class AnthropicProvider(LLMProvider):
     name = "anthropic"
 
-    def __init__(self, *, api_key: str, model_id: str):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model_id: str,
+        max_output: int | None = None,
+        base_url: str | None = None,
+    ):
         self.api_key = api_key
         self.model_id = model_id
+        self.max_output = max_output
+        self.base_url = base_url
         self._client: Any | None = None
 
     @property
@@ -31,9 +40,9 @@ class AnthropicProvider(LLMProvider):
                 from anthropic import AsyncAnthropic
             except ModuleNotFoundError as exc:  # pragma: no cover - environment setup
                 raise RuntimeError(
-                    "anthropic package is required for LLM_PROVIDER=anthropic"
+                    "anthropic package is required for Anthropic chat models"
                 ) from exc
-            self._client = AsyncAnthropic(api_key=self.api_key)
+            self._client = AsyncAnthropic(api_key=self.api_key, base_url=self.base_url)
         return self._client
 
     async def stream_turn(
@@ -47,7 +56,7 @@ class AnthropicProvider(LLMProvider):
         system, anthropic_messages = _to_anthropic_messages(messages)
         request_params: dict[str, Any] = {
             "model": self.model_id,
-            "max_tokens": 4096,
+            "max_tokens": self.max_output or 4096,
             "messages": anthropic_messages,
             "metadata": {"user_id": user_id},
             "stream": True,
@@ -184,7 +193,24 @@ def _to_anthropic_messages(messages: list[LLMMessage]) -> tuple[str | None, list
                 }
             )
             continue
-        output.append({"role": "user", "content": message.content or ""})
+        if message.images:
+            user_content: list[dict[str, Any]] = []
+            if message.content:
+                user_content.append({"type": "text", "text": message.content})
+            for image in message.images:
+                user_content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image.mime_type,
+                            "data": image.base64_data,
+                        },
+                    }
+                )
+            output.append({"role": "user", "content": user_content})
+        else:
+            output.append({"role": "user", "content": message.content or ""})
     return system, output
 
 

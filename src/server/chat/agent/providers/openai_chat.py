@@ -27,10 +27,14 @@ class OpenAIChatCompletionsProvider(LLMProvider):
         client: AsyncOpenAI,
         model_id: str,
         stream_options: dict[str, Any] | None = None,
+        max_output: int | None = None,
+        reasoning_effort: str | None = None,
     ):
         self.client = client
         self.model_id = model_id
         self.stream_options = stream_options or {"include_usage": True}
+        self.max_output = max_output
+        self.reasoning_effort = reasoning_effort
 
     async def stream_turn(
         self,
@@ -47,6 +51,10 @@ class OpenAIChatCompletionsProvider(LLMProvider):
             "stream_options": self.stream_options,
             "user": user_id,
         }
+        if self.max_output is not None:
+            request_params["max_completion_tokens"] = self.max_output
+        if self.reasoning_effort:
+            request_params["reasoning_effort"] = self.reasoning_effort
         if allow_tools:
             request_params["tools"] = [_openai_chat_tool(tool) for tool in tools]
             request_params["tool_choice"] = "auto"
@@ -80,7 +88,19 @@ def _to_chat_message(message: LLMMessage) -> dict[str, Any]:
     if message.role == "system":
         return {"role": "system", "content": message.content or ""}
     if message.role == "user":
-        return {"role": "user", "content": message.content or ""}
+        if not message.images:
+            return {"role": "user", "content": message.content or ""}
+        content: list[dict[str, Any]] = []
+        if message.content:
+            content.append({"type": "text", "text": message.content})
+        for image in message.images:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image.data_url},
+                }
+            )
+        return {"role": "user", "content": content}
     if message.role == "tool":
         return {
             "role": "tool",

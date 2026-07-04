@@ -29,6 +29,8 @@ def serialize_message(message: ChatMessage, dao: ChatDAO | None = None) -> dict[
         "session_id": message.session_id,
         "role": message.role,
         "content": message.content,
+        "model_id": message.model_id,
+        "thinking_effort": message.thinking_effort,
         "parent_message_id": message.parent_message_id,
         "source_message_id": message.source_message_id,
         "version_index": message.version_index,

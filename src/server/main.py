@@ -21,6 +21,7 @@ from starlette.types import Scope
 from src.server.config import global_config
 from src.server.database import bootstrap_database_data, get_database_info
 from src.server.logging_config import setup_logging
+from src.server.chat.service import model_catalog
 
 # 路由模块
 from src.server.auth.router import router as auth_router
@@ -56,9 +57,19 @@ async def lifespan(_: FastAPI):
         logger.info(f"数据库已存在，大小: {db_info.database_size} 字节。")
 
     bootstrap_database_data()
+    model_catalog.load_once()
+    model_reload_task = None
+    try:
+        import asyncio
+
+        model_reload_task = asyncio.create_task(model_catalog.reload_loop())
+    except RuntimeError:
+        model_reload_task = None
 
     logger.success("应用启动完成。")
     yield
+    if model_reload_task is not None:
+        model_reload_task.cancel()
     logger.info("应用已关闭。")
 
 

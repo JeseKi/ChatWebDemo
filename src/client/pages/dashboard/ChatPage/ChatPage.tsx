@@ -113,8 +113,18 @@ export default function ChatPage() {
 
           <MessageComposer
             input={chat.input}
+            models={chat.models}
+            selectedModelId={chat.selectedModelId}
+            selectedVariant={chat.selectedVariant}
+            selectedModelThinkingEntries={chat.selectedModelThinkingEntries}
+            pendingImageFiles={chat.pendingImageFiles}
+            disabledReason={chat.composerDisabledReason}
             streaming={chat.streaming}
             onInputChange={chat.setInput}
+            onSelectedModelChange={chat.setSelectedModelId}
+            onSelectedVariantChange={chat.setSelectedVariant}
+            onAddImageFiles={chat.addPendingImageFiles}
+            onRemoveImageFile={chat.removePendingImageFile}
             onSendMessage={() => void chat.sendMessage()}
             onStopStreaming={chat.stopStreaming}
           />
