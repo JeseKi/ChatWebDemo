@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from src.server.chat import service
+from src.server.chat.models import ChatMessage, ChatSession
 
 
 def _login_admin(test_client):
@@ -102,7 +103,9 @@ def test_stream_chat_persists_messages_and_tool_calls(
     assert list_resp.json()[0]["id"] == session_id
 
 
-def test_update_and_delete_chat_session(test_client, init_test_database, monkeypatch):
+def test_update_and_delete_chat_session(
+    test_client, test_db_session, init_test_database, monkeypatch
+):
     headers = _login_admin(test_client)
 
     async def fake_stream_agent_events(prompt: str, *, user_id: str, session_id: str):
@@ -132,6 +135,18 @@ def test_update_and_delete_chat_session(test_client, init_test_database, monkeyp
 
     delete_resp = test_client.delete(f"/api/chat/sessions/{session_id}", headers=headers)
     assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text
+
+    stored_session = (
+        test_db_session.query(ChatSession).filter(ChatSession.id == session_id).first()
+    )
+    assert stored_session is not None
+    assert stored_session.deleted_at is not None
+    assert (
+        test_db_session.query(ChatMessage)
+        .filter(ChatMessage.session_id == session_id)
+        .count()
+        == 2
+    )
 
     detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
     assert detail_resp.status_code == HTTPStatus.NOT_FOUND

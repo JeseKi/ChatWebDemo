@@ -42,14 +42,18 @@ class ChatDAO(BaseDAO):
     def get_session(self, *, session_id: str, user_id: int) -> ChatSession | None:
         return (
             self.db_session.query(ChatSession)
-            .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+            .filter(
+                ChatSession.id == session_id,
+                ChatSession.user_id == user_id,
+                ChatSession.deleted_at.is_(None),
+            )
             .first()
         )
 
     def list_sessions(self, *, user_id: int, limit: int = 50) -> list[ChatSession]:
         return (
             self.db_session.query(ChatSession)
-            .filter(ChatSession.user_id == user_id)
+            .filter(ChatSession.user_id == user_id, ChatSession.deleted_at.is_(None))
             .order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc())
             .limit(limit)
             .all()
@@ -79,12 +83,9 @@ class ChatDAO(BaseDAO):
         session = self.get_session(session_id=session_id, user_id=user_id)
         if not session:
             return False
-        (
-            self.db_session.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id, ChatMessage.user_id == user_id)
-            .delete(synchronize_session=False)
-        )
-        self.db_session.delete(session)
+        now = datetime.now(timezone.utc)
+        session.deleted_at = now
+        session.updated_at = now
         self.db_session.commit()
         return True
 

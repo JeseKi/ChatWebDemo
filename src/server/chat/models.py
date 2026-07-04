@@ -27,6 +27,9 @@ class ChatSession(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
 
 class ChatMessage(Base):
