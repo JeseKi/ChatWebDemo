@@ -1,5 +1,3 @@
-import type { CSSProperties } from 'react'
-import ReactMarkdown from 'react-markdown'
 import { Button, Flex, Input, Space, Tag, Tooltip, Typography, theme } from 'antd'
 import {
   CheckOutlined,
@@ -9,6 +7,8 @@ import {
 } from '@ant-design/icons'
 import type { AssistantMessagePart, ChatMessage, ToolCallTrace } from '../../../lib/chat'
 import { STREAMING_MESSAGE_ID } from './constants'
+import CopyButton from './CopyButton'
+import MarkdownOutput from './MarkdownOutput'
 import VersionSwitcher from './VersionSwitcher'
 
 export default function MessageBubble({
@@ -156,6 +156,7 @@ function UserMessageView({
           disabled={streaming}
           onActivateMessageVersion={onActivateMessageVersion}
         />
+        <CopyButton text={message.content} />
         <Tooltip title="编辑消息">
           <Button
             size="small"
@@ -192,39 +193,34 @@ function AssistantMessageView({
       ) : (
         assistantParts.map((part) =>
           part.type === 'output' ? (
-            <AssistantOutput key={part.id} content={part.content} />
+            <MarkdownOutput key={part.id} content={part.content} />
           ) : (
             <AssistantTool key={part.id} toolCall={part.tool_call} />
           ),
         )
       )}
-      {isLatest && message.id !== STREAMING_MESSAGE_ID && (
+      {message.id !== STREAMING_MESSAGE_ID && (
         <Space size={4}>
           <VersionSwitcher
             message={message}
             disabled={streaming}
             onActivateMessageVersion={onActivateMessageVersion}
           />
-          <Tooltip title="重新生成">
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              disabled={streaming}
-              onClick={() => void onRegenerateLatestMessage()}
-            />
-          </Tooltip>
+          <CopyButton text={message.content} />
+          {isLatest && (
+            <Tooltip title="重新生成">
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                disabled={streaming}
+                onClick={() => void onRegenerateLatestMessage()}
+              />
+            </Tooltip>
+          )}
         </Space>
       )}
     </Flex>
-  )
-}
-
-function AssistantOutput({ content }: { content: string }) {
-  return (
-    <div className="chat-markdown">
-      <ReactMarkdown>{content}</ReactMarkdown>
-    </div>
   )
 }
 
@@ -267,9 +263,9 @@ function fallbackAssistantParts(message: ChatMessage): AssistantMessagePart[] {
   return parts
 }
 
-const preStyle: CSSProperties = {
+const preStyle = {
   margin: '8px 0 0',
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere',
   fontSize: 12,
-}
+} as const

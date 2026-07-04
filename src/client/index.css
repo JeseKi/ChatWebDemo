@@ -113,6 +113,23 @@ a {
   background: var(--app-surface-muted);
 }
 
+.chat-code-block {
+  position: relative;
+}
+
+.chat-code-block pre {
+  padding-right: 44px;
+}
+
+.chat-code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-color);
+}
+
 .chat-markdown pre code {
   display: block;
   min-width: max-content;
