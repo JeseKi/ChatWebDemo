@@ -336,7 +336,9 @@ def test_create_share_publicly_previews_immutable_snapshot(
         headers=headers,
     )
     assert create_resp.status_code == HTTPStatus.OK, create_resp.text
-    session_id = _parse_sse(create_resp.text)[-1]["data"]["session"]["id"]
+    create_done = _parse_sse(create_resp.text)[-1]["data"]
+    session_id = create_done["session"]["id"]
+    first_assistant_id = create_done["message"]["id"]
 
     share_resp = test_client.post(f"/api/chat/sessions/{session_id}/shares", headers=headers)
     assert share_resp.status_code == HTTPStatus.OK, share_resp.text
@@ -374,6 +376,7 @@ def test_create_share_publicly_previews_immutable_snapshot(
         headers=headers,
     )
     assert regenerate_resp.status_code == HTTPStatus.OK, regenerate_resp.text
+    second_assistant_id = _parse_sse(regenerate_resp.text)[-1]["data"]["message"]["id"]
 
     immutable_preview_resp = test_client.get(f"/api/chat/shares/{share['token']}")
     assert immutable_preview_resp.status_code == HTTPStatus.OK, immutable_preview_resp.text
@@ -400,6 +403,19 @@ def test_create_share_publicly_previews_immutable_snapshot(
         "分享这个会话",
         "第二次回复",
     ]
+
+    switch_old_resp = test_client.post(
+        f"/api/chat/messages/{second_assistant_id}/versions/{first_assistant_id}/activate",
+        headers=headers,
+    )
+    assert switch_old_resp.status_code == HTTPStatus.OK, switch_old_resp.text
+    old_share_resp = test_client.post(
+        f"/api/chat/sessions/{session_id}/shares", headers=headers
+    )
+    assert old_share_resp.status_code == HTTPStatus.OK, old_share_resp.text
+    old_share = old_share_resp.json()
+    assert old_share["token"] == share["token"]
+    assert test_db_session.query(ChatSessionShare).count() == 2
 
     delete_resp = test_client.delete(f"/api/chat/sessions/{session_id}", headers=headers)
     assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text

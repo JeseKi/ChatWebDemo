@@ -31,6 +31,12 @@ from .serializers import serialize_message
 
 SHARE_TOKEN_SIGNATURE_LENGTH = 16
 SHARE_TOKEN_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+VOLATILE_SHARE_MESSAGE_FIELDS = {
+    "version_count",
+    "version_position",
+    "previous_version_message_id",
+    "next_version_message_id",
+}
 
 
 def create_session_share(
@@ -50,7 +56,8 @@ def create_session_share(
         "messages": [serialize_message(message, dao) for message in messages],
     }
     snapshot_json = _dump_snapshot(snapshot)
-    existing_share = share_dao.get_session_share_by_snapshot(
+    existing_share = _find_existing_share(
+        share_dao,
         owner_user_id=current_user.id,
         source_session_id=session.id,
         source_active_leaf_message_id=session.active_leaf_message_id,
@@ -193,6 +200,50 @@ def _share_out(share: ChatSessionShare, *, token: str) -> ChatSessionShareOut:
             "created_at": share.created_at,
         }
     )
+
+
+def _find_existing_share(
+    share_dao: ChatShareDAO,
+    *,
+    owner_user_id: int,
+    source_session_id: str,
+    source_active_leaf_message_id: int | None,
+    snapshot_json: str,
+) -> ChatSessionShare | None:
+    existing_share = share_dao.get_session_share_by_snapshot(
+        owner_user_id=owner_user_id,
+        source_session_id=source_session_id,
+        source_active_leaf_message_id=source_active_leaf_message_id,
+        snapshot_json=snapshot_json,
+    )
+    if existing_share:
+        return existing_share
+
+    stable_snapshot_json = _stable_snapshot_json(snapshot_json)
+    for share in share_dao.list_session_shares_by_leaf(
+        owner_user_id=owner_user_id,
+        source_session_id=source_session_id,
+        source_active_leaf_message_id=source_active_leaf_message_id,
+    ):
+        if _stable_snapshot_json(share.snapshot_json) == stable_snapshot_json:
+            return share
+    return None
+
+
+def _stable_snapshot_json(snapshot_json: str) -> str:
+    snapshot = _load_snapshot(snapshot_json)
+    stable_messages = []
+    for message in snapshot.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+        stable_messages.append(
+            {
+                key: value
+                for key, value in message.items()
+                if key not in VOLATILE_SHARE_MESSAGE_FIELDS
+            }
+        )
+    return _dump_snapshot({"messages": stable_messages})
 
 
 def _create_share_token(

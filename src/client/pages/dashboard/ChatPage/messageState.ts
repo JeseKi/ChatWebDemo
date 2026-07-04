@@ -187,7 +187,13 @@ function createStreamingAssistant({
 }
 
 function sortMessages(messages: ChatMessage[]): ChatMessage[] {
-  return [...messages].sort((a, b) => a.sequence - b.sequence || a.id - b.id)
+  return [...messages].sort((a, b) => {
+    if (a.id === STREAMING_MESSAGE_ID || b.id === STREAMING_MESSAGE_ID) {
+      if (a.id === b.id) return 0
+      return a.id === STREAMING_MESSAGE_ID ? 1 : -1
+    }
+    return a.sequence - b.sequence || a.id - b.id
+  })
 }
 
 function appendOutputDelta(

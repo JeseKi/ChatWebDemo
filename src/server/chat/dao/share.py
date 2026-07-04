@@ -63,3 +63,22 @@ class ChatShareDAO(BaseDAO):
             .order_by(ChatSessionShare.id.desc())
             .first()
         )
+
+    def list_session_shares_by_leaf(
+        self,
+        *,
+        owner_user_id: int,
+        source_session_id: str,
+        source_active_leaf_message_id: int | None,
+    ) -> list[ChatSessionShare]:
+        return (
+            self.db_session.query(ChatSessionShare)
+            .filter(
+                ChatSessionShare.owner_user_id == owner_user_id,
+                ChatSessionShare.source_session_id == source_session_id,
+                ChatSessionShare.source_active_leaf_message_id
+                == source_active_leaf_message_id,
+            )
+            .order_by(ChatSessionShare.id.desc())
+            .all()
+        )
