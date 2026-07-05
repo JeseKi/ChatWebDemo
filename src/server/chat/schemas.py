@@ -98,9 +98,27 @@ class ChatRunOut(BaseModel):
     finished_at: datetime | None = None
 
 
+class ChatContextCompressionOut(BaseModel):
+    id: int
+    session_id: str = Field(..., pattern=CHAT_SESSION_ID_PATTERN)
+    head_end_message_id: int
+    tail_start_message_id: int
+    source_leaf_message_id: int
+    previous_compression_id: int | None = None
+    trigger: str
+    summary: str
+    summary_model_id: str | None = None
+    original_token_estimate: int
+    summary_token_estimate: int
+    message_count: int
+    applies_to_active_path: bool = False
+    created_at: datetime
+
+
 class ChatSessionDetailOut(ChatSessionOut):
     messages: list[ChatMessageOut]
     active_run: ChatRunOut | None = None
+    context_compressions: list[ChatContextCompressionOut] = Field(default_factory=list)
 
 
 class ChatSessionShareOut(BaseModel):

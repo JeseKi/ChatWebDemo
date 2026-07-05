@@ -18,8 +18,6 @@ from .serializers import serialize_message, serialize_session
 from .runs import build_session_factory, manager, stream_run_events
 from .sessions import resolve_or_create_session
 from .streaming_support import (
-    TransientMessage,
-    context_budget_error,
     resolve_model,
     resolve_request_images,
     stream_assistant_for_user,
@@ -62,19 +60,6 @@ async def stream_chat(
         first_message=prompt,
     )
     content = append_image_markers(prompt, request_images)
-    history_before = dao.list_active_path(session=session)
-    projected_history = [
-        *history_before,
-        TransientMessage(
-            role="user",
-            content=content,
-            user_id=current_user.id,
-        ),
-    ]
-    budget_error = context_budget_error(projected_history, model_config)
-    if budget_error:
-        yield sse_event("error", {"message": budget_error})
-        return
     user_message = dao.append_message(
         session_id=session.id,
         user_id=current_user.id,
@@ -164,23 +149,6 @@ async def stream_edit_message(
 
     source_message_id = original.source_message_id or original.id
     content = escape_image_markers(prompt)
-    branch_messages = []
-    for active_message in dao.list_active_path(session=session):
-        if active_message.id == original.id:
-            break
-        branch_messages.append(active_message)
-    projected_history = [
-        *branch_messages,
-        TransientMessage(
-            role="user",
-            content=content,
-            user_id=current_user.id,
-        ),
-    ]
-    budget_error = context_budget_error(projected_history, model_config)
-    if budget_error:
-        yield sse_event("error", {"message": budget_error})
-        return
     user_message = dao.append_message(
         session_id=session.id,
         user_id=current_user.id,
@@ -243,11 +211,6 @@ async def stream_regenerate(
         )
         or session
     )
-    budget_error = context_budget_error(dao.list_active_path(session=session), model_config)
-    if budget_error:
-        yield sse_event("error", {"message": budget_error})
-        return
-
     yield sse_event("session_ready", {"session": serialize_session(session)})
     yield sse_event("branch_reset", {"parent_message_id": user_message.id})
     async for event in stream_assistant_for_user(

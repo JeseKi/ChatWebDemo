@@ -3,6 +3,7 @@ import { App } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as chatApi from '../../../lib/chat'
 import type {
+  ChatContextCompression,
   ChatImage,
   ChatMessage,
   ChatModel,
@@ -30,6 +31,7 @@ export function useChatPageController() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [contextCompressions, setContextCompressions] = useState<ChatContextCompression[]>([])
   const [input, setInput] = useState('')
   const [models, setModels] = useState<ChatModel[]>([])
   const [modelConfigError, setModelConfigError] = useState<string | null>(null)
@@ -98,11 +100,13 @@ export function useChatPageController() {
       const detail = await chatApi.getChatSession(sessionId)
       setMessages(detail.messages)
       setActiveRun(detail.active_run)
+      setContextCompressions(detail.context_compressions)
       upsertSession(detail)
     } catch (error) {
       toast.error(resolveErrorMessage(error))
       updateActiveSessionId(null)
       setMessages([])
+      setContextCompressions([])
       setActiveRun(null)
       navigate('/chat', { replace: true })
     } finally {
@@ -168,6 +172,7 @@ export function useChatPageController() {
   const startNewSession = useCallback((options?: { syncUrl?: boolean }) => {
     updateActiveSessionId(null)
     setMessages([])
+    setContextCompressions([])
     setInput('')
     setPendingImageFiles([])
     setActiveRun(null)
@@ -348,6 +353,20 @@ export function useChatPageController() {
       )
       return
     }
+    if (event.type === 'context_compaction_done') {
+      setContextCompressions((current) => {
+        const next = current.filter((item) => item.id !== event.compression.id)
+        return [...next, event.compression].sort((a, b) => a.created_at.localeCompare(b.created_at))
+      })
+      return
+    }
+    if (event.type === 'context_compaction_warning') {
+      toast.warning(event.message)
+      return
+    }
+    if (event.type === 'context_compaction_started') {
+      return
+    }
     if (event.type === 'done') {
       setMessages((current) => replaceStreamingMessage(current, event.message))
       upsertSession(event.session)
@@ -376,6 +395,16 @@ export function useChatPageController() {
     } finally {
       abortRef.current = null
       setStreaming(false)
+      const sessionId = activeSessionIdRef.current
+      if (sessionId) {
+        try {
+          const detail = await chatApi.getChatSession(sessionId)
+          setContextCompressions(detail.context_compressions)
+          setActiveRun(detail.active_run)
+        } catch {
+          // Session refresh failures are non-critical after a stream finishes.
+        }
+      }
     }
   }, [handleStreamEvent, refreshSessions, toast])
 
@@ -444,6 +473,7 @@ export function useChatPageController() {
       const detail = await chatApi.activateChatMessageVersion(messageId, targetMessageId)
       updateActiveSessionId(detail.id)
       setMessages(detail.messages)
+      setContextCompressions(detail.context_compressions)
       upsertSession(detail)
       navigate(`/chat/${detail.id}`, { replace: true })
     } catch (error) {
@@ -513,7 +543,7 @@ export function useChatPageController() {
   }
 
   return {
-    sessions, activeSessionId, activeSession, messages, input,
+    sessions, activeSessionId, activeSession, messages, contextCompressions, input,
     models, modelConfigError, selectedModelId, selectedVariant,
     selectedModel, selectedModelThinkingEntries, pendingImageFiles,
     composerDisabledReason,

@@ -99,6 +99,7 @@ export default function ChatPage() {
           <TranscriptPanel
             transcriptRef={chat.transcriptRef}
             messages={chat.messages}
+            contextCompressions={chat.contextCompressions}
             loadingMessages={chat.loadingMessages}
             streaming={chat.streaming}
             editingMessageId={chat.editingMessageId}

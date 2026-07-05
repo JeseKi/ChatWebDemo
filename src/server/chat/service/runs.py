@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ..dao import ChatDAO
 from ..models import ChatRun, ChatRunEvent
-from .agent import build_agent_messages, reset_agent_model_context, set_agent_model_context
+from .agent import reset_agent_model_context, set_agent_model_context
+from .context_compression import ContextCompressionError, prepare_agent_context
 from .events import (
     append_output_part,
     append_reasoning_part,
@@ -143,8 +144,19 @@ async def _execute_run(db: Session, *, run_id: str) -> None:
         _fail_run(dao, run, "任务消息不存在")
         return
 
-    history = dao.list_path_to_message(message=user_message)
-    agent_input = build_agent_messages(history)
+    try:
+        prepared_context = await prepare_agent_context(
+            dao,
+            user_message=user_message,
+            model_config=model_config,
+            thinking_effort=run.thinking_effort,
+            trigger="auto",
+            event_sink=lambda event_type, data: _append_event(dao, run, event_type, data),
+        )
+    except ContextCompressionError as exc:
+        _fail_run(dao, run, str(exc))
+        return
+    agent_input = prepared_context.messages
     content_chunks: list[str] = []
     tool_calls: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []

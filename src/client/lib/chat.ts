@@ -110,9 +110,27 @@ export interface ChatRun {
   finished_at: string | null
 }
 
+export interface ChatContextCompression {
+  id: number
+  session_id: string
+  head_end_message_id: number
+  tail_start_message_id: number
+  source_leaf_message_id: number
+  previous_compression_id: number | null
+  trigger: string
+  summary: string
+  summary_model_id: string | null
+  original_token_estimate: number
+  summary_token_estimate: number
+  message_count: number
+  applies_to_active_path: boolean
+  created_at: string
+}
+
 export interface ChatSessionDetail extends ChatSession {
   messages: ChatMessage[]
   active_run: ChatRun | null
+  context_compressions: ChatContextCompression[]
 }
 
 export interface ChatSessionShare {
@@ -141,6 +159,9 @@ export type ChatStreamEvent =
   | ({ type: 'content_delta'; part_id: string; delta: string } & ChatStreamEventMeta)
   | ({ type: 'tool_call_started'; tool_call: ToolCallTrace } & ChatStreamEventMeta)
   | ({ type: 'tool_call_completed'; tool_call: ToolCallTrace } & ChatStreamEventMeta)
+  | ({ type: 'context_compaction_started'; trigger: string; head_end_message_id: number; tail_start_message_id: number } & ChatStreamEventMeta)
+  | ({ type: 'context_compaction_done'; compression: ChatContextCompression } & ChatStreamEventMeta)
+  | ({ type: 'context_compaction_warning'; message: string } & ChatStreamEventMeta)
   | ({ type: 'error'; message: string } & ChatStreamEventMeta)
   | ({ type: 'done'; message: ChatMessage; session: ChatSession } & ChatStreamEventMeta)
 

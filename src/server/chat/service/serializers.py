@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..dao import ChatDAO, parse_message_parts, parse_tool_calls
-from ..models import ChatMessage, ChatRun, ChatSession
+from ..models import ChatContextCompression, ChatMessage, ChatRun, ChatSession
 from ..tools import get_tool_display_name
 
 
@@ -58,6 +58,29 @@ def serialize_run(run: ChatRun, dao: ChatDAO | None = None) -> dict[str, Any]:
         "created_at": run.created_at.isoformat(),
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+def serialize_context_compression(
+    compression: ChatContextCompression,
+    *,
+    applies_to_active_path: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": compression.id,
+        "session_id": compression.session_id,
+        "head_end_message_id": compression.head_end_message_id,
+        "tail_start_message_id": compression.tail_start_message_id,
+        "source_leaf_message_id": compression.source_leaf_message_id,
+        "previous_compression_id": compression.previous_compression_id,
+        "trigger": compression.trigger,
+        "summary": compression.summary,
+        "summary_model_id": compression.summary_model_id,
+        "original_token_estimate": compression.original_token_estimate,
+        "summary_token_estimate": compression.summary_token_estimate,
+        "message_count": compression.message_count,
+        "applies_to_active_path": applies_to_active_path,
+        "created_at": compression.created_at.isoformat(),
     }
 
 

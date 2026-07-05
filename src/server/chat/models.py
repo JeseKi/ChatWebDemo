@@ -100,6 +100,29 @@ class ChatRunEvent(Base):
     )
 
 
+class ChatContextCompression(Base):
+    __tablename__ = "chat_context_compressions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    head_end_message_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tail_start_message_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    source_leaf_message_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    previous_compression_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trigger: Mapped[str] = mapped_column(String(40), nullable=False, default="auto")
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_model_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    original_token_estimate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary_token_estimate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class ChatSessionShare(Base):
     __tablename__ = "chat_session_shares"
 

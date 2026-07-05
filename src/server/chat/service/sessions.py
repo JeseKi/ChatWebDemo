@@ -10,8 +10,14 @@ from src.server.auth.models import User
 
 from ..dao import ChatDAO
 from ..models import ChatSession
-from ..schemas import ChatMessageOut, ChatSessionDetailOut
-from .serializers import serialize_message, serialize_run, serialize_session
+from ..schemas import ChatContextCompressionOut, ChatMessageOut, ChatSessionDetailOut
+from .context_compression import compression_applies_to_path
+from .serializers import (
+    serialize_context_compression,
+    serialize_message,
+    serialize_run,
+    serialize_session,
+)
 
 
 def get_session_detail(
@@ -22,9 +28,25 @@ def get_session_detail(
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="聊天会话不存在")
 
+    active_path = dao.list_active_path(session=session)
     messages = [
         ChatMessageOut.model_validate(serialize_message(message, dao))
-        for message in dao.list_active_path(session=session)
+        for message in active_path
+    ]
+    compressions = [
+        ChatContextCompressionOut.model_validate(
+            serialize_context_compression(
+                compression,
+                applies_to_active_path=compression_applies_to_path(
+                    compression,
+                    path=active_path,
+                ),
+            )
+        )
+        for compression in dao.list_context_compressions(
+            session_id=session.id,
+            user_id=current_user.id,
+        )
     ]
     active_run = dao.get_active_run_for_session(
         session_id=session.id,
@@ -34,6 +56,7 @@ def get_session_detail(
         **serialize_session(session),
         "messages": messages,
         "active_run": serialize_run(active_run, dao) if active_run else None,
+        "context_compressions": compressions,
     }
     return ChatSessionDetailOut.model_validate(payload)
 

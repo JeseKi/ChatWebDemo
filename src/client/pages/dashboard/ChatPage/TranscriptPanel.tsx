@@ -1,11 +1,17 @@
 import type { RefObject } from 'react'
-import { Empty, Flex, Skeleton, theme } from 'antd'
-import type { ChatMessage } from '../../../lib/chat'
+import { Collapse, Empty, Flex, Skeleton, Tag, Typography, theme } from 'antd'
+import type { ChatContextCompression, ChatMessage } from '../../../lib/chat'
+import MarkdownOutput from './MarkdownOutput'
 import MessageBubble from './MessageBubble'
+
+type TranscriptItem =
+  | { type: 'message'; message: ChatMessage }
+  | { type: 'compression'; compression: ChatContextCompression }
 
 export default function TranscriptPanel({
   transcriptRef,
   messages,
+  contextCompressions,
   loadingMessages,
   streaming,
   editingMessageId,
@@ -19,6 +25,7 @@ export default function TranscriptPanel({
 }: {
   transcriptRef: RefObject<HTMLDivElement | null>
   messages: ChatMessage[]
+  contextCompressions: ChatContextCompression[]
   loadingMessages: boolean
   streaming: boolean
   editingMessageId: number | null
@@ -31,6 +38,8 @@ export default function TranscriptPanel({
   onActivateMessageVersion: (messageId: number, targetMessageId: number) => Promise<void>
 }) {
   const { token } = theme.useToken()
+  const transcriptItems = buildTranscriptItems(messages, contextCompressions)
+  const latestMessageId = messages[messages.length - 1]?.id
 
   return (
     <div
@@ -54,25 +63,102 @@ export default function TranscriptPanel({
         />
       ) : (
         <Flex vertical gap={12}>
-          {messages.map((item) => (
-            <MessageBubble
-              key={item.id}
-              message={item}
-              isLatest={item.id === messages[messages.length - 1]?.id}
-              streaming={streaming}
-              editingMessageId={editingMessageId}
-              editingMessageContent={editingMessageContent}
-              onStartEditingMessage={onStartEditingMessage}
-              onEditingMessageContentChange={onEditingMessageContentChange}
-              onCancelEditingMessage={onCancelEditingMessage}
-              onSaveEditedMessage={onSaveEditedMessage}
-              onRegenerateLatestMessage={onRegenerateLatestMessage}
-              onActivateMessageVersion={onActivateMessageVersion}
-            />
-          ))}
+          {transcriptItems.map((item) =>
+            item.type === 'compression' ? (
+              <ContextCompressionMessage
+                key={`compression-${item.compression.id}`}
+                compression={item.compression}
+              />
+            ) : (
+              <MessageBubble
+                key={item.message.id}
+                message={item.message}
+                isLatest={item.message.id === latestMessageId}
+                streaming={streaming}
+                editingMessageId={editingMessageId}
+                editingMessageContent={editingMessageContent}
+                onStartEditingMessage={onStartEditingMessage}
+                onEditingMessageContentChange={onEditingMessageContentChange}
+                onCancelEditingMessage={onCancelEditingMessage}
+                onSaveEditedMessage={onSaveEditedMessage}
+                onRegenerateLatestMessage={onRegenerateLatestMessage}
+                onActivateMessageVersion={onActivateMessageVersion}
+              />
+            ),
+          )}
         </Flex>
       )}
     </div>
+  )
+}
+
+function buildTranscriptItems(
+  messages: ChatMessage[],
+  compressions: ChatContextCompression[],
+): TranscriptItem[] {
+  const activeCompressions = compressions
+    .filter((item) => item.applies_to_active_path)
+    .sort((a, b) => a.head_end_message_id - b.head_end_message_id || a.id - b.id)
+  const activeCompression = activeCompressions[activeCompressions.length - 1]
+  const items: TranscriptItem[] = []
+
+  for (const message of messages) {
+    if (activeCompression && message.id === activeCompression.tail_start_message_id) {
+      items.push({ type: 'compression', compression: activeCompression })
+    }
+    items.push({ type: 'message', message })
+  }
+
+  return items
+}
+
+function ContextCompressionMessage({
+  compression,
+}: {
+  compression: ChatContextCompression
+}) {
+  const { token } = theme.useToken()
+
+  return (
+    <Flex justify="center">
+      <div
+        style={{
+          width: '78%',
+          maxWidth: '100%',
+          borderRadius: 8,
+          padding: '8px 10px',
+          background: token.colorFillQuaternary,
+          border: `1px dashed ${token.colorBorder}`,
+        }}
+      >
+        <Flex vertical gap={6}>
+          <Flex align="center" justify="space-between" gap={8} wrap>
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+              上下文已压缩
+            </Tag>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {new Date(compression.created_at).toLocaleString()}
+            </Typography.Text>
+          </Flex>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            覆盖至消息 {compression.head_end_message_id} · 保留从消息{' '}
+            {compression.tail_start_message_id} 开始 · {compression.original_token_estimate} →{' '}
+            {compression.summary_token_estimate} tokens
+          </Typography.Text>
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: String(compression.id),
+                label: '查看压缩摘要',
+                children: <MarkdownOutput content={compression.summary} />,
+              },
+            ]}
+          />
+        </Flex>
+      </div>
+    </Flex>
   )
 }
 

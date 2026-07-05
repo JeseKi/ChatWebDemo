@@ -20,6 +20,7 @@ from .events import (
 from .serializers import (
     build_fallback_parts,
     build_version_info,
+    serialize_context_compression,
     serialize_message,
     serialize_run,
     serialize_session,
@@ -48,6 +49,7 @@ __all__ = [
     "is_reasoning_event",
     "normalize_event_name",
     "serialize_message",
+    "serialize_context_compression",
     "serialize_run",
     "serialize_session",
     "sse_event",

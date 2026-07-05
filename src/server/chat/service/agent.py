@@ -26,7 +26,6 @@ from ..tools import ChatTool
 from .constants import (
     CHAT_AGENT_HISTORY_PROMPT,
     CHAT_AGENT_INSTRUCTIONS,
-    MAX_HISTORY_MESSAGES,
 )
 
 _current_model_config: ContextVar[ModelConfig | None] = ContextVar(
@@ -95,13 +94,14 @@ class OpenAICompatibleChatAgent(BaseAgent):
         }
 
 
-def build_agent_input(messages: list[ChatMessage]) -> str:
-    recent_messages = messages[-MAX_HISTORY_MESSAGES:]
+def build_agent_input(messages: list[ChatMessage], context_summary: str | None = None) -> str:
     lines = [
         CHAT_AGENT_HISTORY_PROMPT,
         "",
     ]
-    for item in recent_messages:
+    if context_summary:
+        lines.extend(["Summary of earlier conversation:", context_summary, ""])
+    for item in messages:
         role = "User" if item.role == "user" else "Assistant"
         lines.append(f"{role}: {item.content}")
     return "\n".join(lines)
@@ -121,9 +121,24 @@ class AgentMessageHistory(list[LLMMessage]):
         return self.text_view
 
 
-def build_agent_messages(messages: list[ChatMessage]) -> list[LLMMessage]:
+def build_agent_messages(
+    messages: list[ChatMessage],
+    *,
+    context_summary: str | None = None,
+) -> list[LLMMessage]:
     output: list[LLMMessage] = [LLMMessage(role="system", content=CHAT_AGENT_INSTRUCTIONS)]
-    for item in messages[-MAX_HISTORY_MESSAGES:]:
+    if context_summary:
+        output.append(
+            LLMMessage(
+                role="user",
+                content=(
+                    "Summary of earlier conversation. Use this as context, then answer "
+                    "the latest user message from the following turns.\n\n"
+                    f"{context_summary}"
+                ),
+            )
+        )
+    for item in messages:
         content = content_without_image_markers(item.content)
         output.append(
             LLMMessage(
@@ -132,7 +147,7 @@ def build_agent_messages(messages: list[ChatMessage]) -> list[LLMMessage]:
                 images=_images_for_message(item) if item.role == "user" else [],
             )
         )
-    return AgentMessageHistory(output, build_agent_input(messages))
+    return AgentMessageHistory(output, build_agent_input(messages, context_summary))
 
 
 def _images_for_message(message: ChatMessage) -> list[LLMImage]:

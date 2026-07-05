@@ -13,8 +13,8 @@ from src.server.auth.models import User
 from ..dao import ChatDAO
 from ..models import ChatMessage, ChatSession
 from ..schemas import ChatImageReference
-from .agent import build_agent_messages, reset_agent_model_context, set_agent_model_context
-from .constants import MAX_HISTORY_MESSAGES
+from .agent import reset_agent_model_context, set_agent_model_context
+from .context_compression import ContextCompressionError, prepare_agent_context
 from .events import (
     append_output_part,
     append_reasoning_part,
@@ -29,23 +29,11 @@ from .events import (
 )
 from .images import (
     MAX_IMAGES_PER_MESSAGE,
-    content_without_image_markers,
     escape_image_markers,
-    estimate_image_tokens,
-    estimate_text_tokens,
-    extract_image_urls,
     get_user_image,
-    image_id_from_url,
 )
 from .model_catalog import ModelConfig, get_model, normalize_thinking_effort
 from .serializers import serialize_message, serialize_session
-
-
-class TransientMessage:
-    def __init__(self, *, role: str, content: str, user_id: int):
-        self.role = role
-        self.content = content
-        self.user_id = user_id
 
 
 async def stream_assistant_for_user(
@@ -58,8 +46,20 @@ async def stream_assistant_for_user(
     thinking_effort: str | None,
     regenerate_source_message_id: int | None = None,
 ) -> AsyncIterator[str]:
-    history = dao.list_active_path(session=session)
-    agent_input = build_agent_messages(history)
+    try:
+        prepared_context = await prepare_agent_context(
+            dao,
+            user_message=user_message,
+            model_config=model_config,
+            thinking_effort=thinking_effort,
+            trigger="auto",
+        )
+    except ContextCompressionError as exc:
+        yield sse_event("error", {"message": str(exc)})
+        return
+    for event in prepared_context.events:
+        yield sse_event(event.type, event.data)
+    agent_input = prepared_context.messages
     content_chunks: list[str] = []
     tool_calls: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []
@@ -175,28 +175,6 @@ def resolve_request_images(
             )
         resolved.append(stored)
     return resolved
-
-
-def context_budget_error(messages: list[Any], model: ModelConfig) -> str | None:
-    total = 0
-    has_images = False
-    for message in messages[-MAX_HISTORY_MESSAGES:]:
-        total += estimate_text_tokens(content_without_image_markers(message.content))
-        for url in extract_image_urls(message.content):
-            image_id = image_id_from_url(url)
-            if not image_id:
-                continue
-            stored = get_user_image(message.user_id, image_id)
-            if stored is None:
-                continue
-            has_images = True
-            total += estimate_image_tokens(stored.width, stored.height)
-    if has_images and not model.visual:
-        return "当前会话包含图片，请选择支持视觉的模型"
-    if total > model.context:
-        return "当前会话上下文预计超出模型限制，请新开会话"
-    return None
-
 
 def _stream_agent_events() -> Callable[..., AsyncIterator[Any]]:
     from src.server.chat import service
