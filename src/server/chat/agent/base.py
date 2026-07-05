@@ -44,7 +44,7 @@ class BaseAgent:
         provider: LLMProvider,
         instructions: str,
         tools: list[AgentTool] | None = None,
-        max_tool_calls: int = 4,
+        max_tool_calls: int | None = None,
         keep_thinking_content: bool = False,
     ):
         self.provider = provider
@@ -83,7 +83,9 @@ class BaseAgent:
             reasoning_chunks: list[str] = []
             tool_calls: list[LLMToolCall] = []
             provider_metadata: dict[str, Any] = {}
-            allow_tools = bool(self.tools) and tool_calls_used < self.max_tool_calls
+            allow_tools = bool(self.tools) and (
+                self.max_tool_calls is None or tool_calls_used < self.max_tool_calls
+            )
 
             async for event in self.provider.stream_turn(
                 messages,
@@ -131,7 +133,10 @@ class BaseAgent:
                 tool_calls_used += 1
                 result = await self._execute_tool_call(
                     tool_call,
-                    allowed=tool_calls_used <= self.max_tool_calls,
+                    allowed=(
+                        self.max_tool_calls is None
+                        or tool_calls_used <= self.max_tool_calls
+                    ),
                 )
                 yield ChatRunEvent(
                     event="ToolCallStarted",
@@ -152,7 +157,10 @@ class BaseAgent:
                 )
                 messages.append(self.provider.build_tool_message(tool_call, result.output))
 
-            if tool_calls_used >= self.max_tool_calls:
+            if (
+                self.max_tool_calls is not None
+                and tool_calls_used >= self.max_tool_calls
+            ):
                 messages.append(
                     LLMMessage(
                         role="user",

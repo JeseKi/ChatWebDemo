@@ -29,7 +29,6 @@ from .constants import (
     MAX_HISTORY_MESSAGES,
 )
 
-CHAT_TOOL_CALL_LIMIT = 4
 _current_model_config: ContextVar[ModelConfig | None] = ContextVar(
     "current_model_config",
     default=None,
@@ -88,7 +87,6 @@ class OpenAICompatibleChatAgent(BaseAgent):
             provider=provider,
             instructions=CHAT_AGENT_INSTRUCTIONS,
             tools=tools,
-            max_tool_calls=CHAT_TOOL_CALL_LIMIT,
         )
         self.client = client
         self.model_id = model_id
