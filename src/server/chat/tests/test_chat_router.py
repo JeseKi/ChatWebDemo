@@ -5,6 +5,8 @@ from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, cast
 
+import pytest
+
 from src.server.chat import service
 from src.server.auth.models import User
 from src.server.chat.models import ChatMessage, ChatSession, ChatSessionShare
@@ -248,6 +250,36 @@ def test_stream_chat_background_run_survives_client_disconnect(
         "content_delta",
         "done",
     ]
+
+
+def test_stream_chat_rolls_back_prepare_when_run_creation_fails(
+    test_db_session, init_test_database, monkeypatch
+):
+    current_user = test_db_session.query(User).filter(User.username == "admin").one()
+
+    def fail_create_run(self, **kwargs):
+        raise RuntimeError("run creation failed")
+
+    monkeypatch.setattr(ChatDAO, "create_run", fail_create_run)
+
+    async def exercise_failure():
+        stream = service.stream_chat(
+            test_db_session,
+            current_user=current_user,
+            message="不会落库",
+            session_id=None,
+            model_id="test-model",
+            thinking_effort="low",
+        )
+        stream = cast(AsyncGenerator[str, None], stream)
+        with pytest.raises(RuntimeError, match="run creation failed"):
+            await stream.__anext__()
+
+    asyncio.run(exercise_failure())
+    test_db_session.expire_all()
+
+    assert test_db_session.query(ChatSession).count() == 0
+    assert test_db_session.query(ChatMessage).count() == 0
 
 
 def test_edit_message_background_run_survives_client_disconnect(

@@ -85,6 +85,7 @@ def resolve_or_create_session(
     current_user: User,
     session_id: str | None,
     first_message: str,
+    commit: bool = True,
 ) -> ChatSession:
     if session_id:
         session = dao.get_session(session_id=session_id, user_id=current_user.id)
@@ -96,4 +97,4 @@ def resolve_or_create_session(
         return session
 
     title = first_message.replace("\n", " ").strip()[:60] or "新对话"
-    return dao.create_session(user_id=current_user.id, title=title)
+    return dao.create_session(user_id=current_user.id, title=title, commit=commit)

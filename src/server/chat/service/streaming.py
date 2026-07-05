@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,20 +63,19 @@ async def stream_chat(
         yield sse_event("error", {"message": "当前模型不支持图片"})
         return
 
-    intent = _prepare_new_message_run(
-        dao,
-        current_user=current_user,
-        session_id=session_id,
-        prompt=prompt,
-        request_images=request_images,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
-    )
-    async for event in _start_and_stream_run(
+    async for event in _prepare_start_and_stream_run(
         db,
         dao=dao,
         current_user=current_user,
-        intent=intent,
+        prepare=lambda: _prepare_new_message_run(
+            dao,
+            current_user=current_user,
+            session_id=session_id,
+            prompt=prompt,
+            request_images=request_images,
+            model_id=model_config.id,
+            thinking_effort=normalized_effort,
+        ),
     ):
         yield event
 
@@ -96,6 +95,7 @@ def _prepare_new_message_run(
         current_user=current_user,
         session_id=session_id,
         first_message=prompt,
+        commit=False,
     )
     user_message = dao.append_message(
         session_id=session.id,
@@ -105,6 +105,7 @@ def _prepare_new_message_run(
         model_id=model_id,
         thinking_effort=thinking_effort,
         parent_message_id=session.active_leaf_message_id,
+        commit=False,
     )
     assistant_message = _append_assistant_placeholder(
         dao,
@@ -145,6 +146,7 @@ def _prepare_edit_message_run(
         parent_message_id=original.parent_message_id,
         source_message_id=source_message_id,
         version_index=dao.next_version_index(source_message_id=source_message_id),
+        commit=False,
     )
     assistant_message = _append_assistant_placeholder(
         dao,
@@ -228,6 +230,7 @@ def _append_assistant_placeholder(
         parent_message_id=user_message.id,
         source_message_id=source_message_id,
         version_index=version_index,
+        commit=False,
     )
 
 
@@ -265,6 +268,7 @@ def _create_run_for_intent(
         assistant_message_id=intent.assistant_message.id,
         model_id=intent.assistant_message.model_id,
         thinking_effort=intent.assistant_message.thinking_effort,
+        commit=False,
     )
     session = (
         dao.get_session(session_id=intent.session.id, user_id=current_user.id)
@@ -276,6 +280,7 @@ def _create_run_for_intent(
         user_id=current_user.id,
         event_type="session_ready",
         data={"session": serialize_session(session), "run": {"id": run.id}},
+        commit=False,
     )
     for event_type, data in intent.initial_events:
         dao.append_run_event(
@@ -284,20 +289,29 @@ def _create_run_for_intent(
             user_id=current_user.id,
             event_type=event_type,
             data=data,
+            commit=False,
         )
     return run
 
 
-async def _start_and_stream_run(
+async def _prepare_start_and_stream_run(
     db: Session,
     *,
     dao: ChatDAO,
     current_user: User,
-    intent: ChatRunIntent,
+    prepare: Callable[[], ChatRunIntent],
 ) -> AsyncIterator[str]:
-    run = _create_run_for_intent(dao, current_user=current_user, intent=intent)
-    manager.start(run.id, build_session_factory(db))
-    async for event in stream_run_events(db, run_id=run.id, user_id=current_user.id):
+    try:
+        intent = prepare()
+        run = _create_run_for_intent(dao, current_user=current_user, intent=intent)
+        run_id = run.id
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    manager.start(run_id, build_session_factory(db))
+    async for event in stream_run_events(db, run_id=run_id, user_id=current_user.id):
         yield event
 
 
@@ -337,20 +351,19 @@ async def stream_edit_message(
         yield sse_event("error", {"message": "含图片的消息暂不支持编辑"})
         return
 
-    intent = _prepare_edit_message_run(
-        dao,
-        current_user=current_user,
-        session=session,
-        original=original,
-        prompt=prompt,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
-    )
-    async for event in _start_and_stream_run(
+    async for event in _prepare_start_and_stream_run(
         db,
         dao=dao,
         current_user=current_user,
-        intent=intent,
+        prepare=lambda: _prepare_edit_message_run(
+            dao,
+            current_user=current_user,
+            session=session,
+            original=original,
+            prompt=prompt,
+            model_id=model_config.id,
+            thinking_effort=normalized_effort,
+        ),
     ):
         yield event
 
@@ -380,18 +393,17 @@ async def stream_regenerate(
         yield sse_event("error", {"message": "没有可重新生成的用户消息"})
         return
 
-    intent = _prepare_regenerate_run(
-        dao,
-        current_user=current_user,
-        session=session,
-        user_message=user_message,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
-    )
-    async for event in _start_and_stream_run(
+    async for event in _prepare_start_and_stream_run(
         db,
         dao=dao,
         current_user=current_user,
-        intent=intent,
+        prepare=lambda: _prepare_regenerate_run(
+            dao,
+            current_user=current_user,
+            session=session,
+            user_message=user_message,
+            model_id=model_config.id,
+            thinking_effort=normalized_effort,
+        ),
     ):
         yield event
