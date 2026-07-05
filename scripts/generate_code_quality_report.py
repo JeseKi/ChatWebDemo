@@ -43,7 +43,7 @@ class FileScore:
     relative_path: str
     group: GroupName
     effective_lines: int
-    score: int
+    score: float
     status: ScoreStatus
     included_in_score: bool
     is_test: bool
@@ -226,19 +226,27 @@ def count_web_effective_lines(path: Path) -> tuple[int, str | None]:
     return sum(1 for has_code in line_has_code if has_code), None
 
 
-def score_file(group: GroupName, effective_lines: int) -> tuple[int, ScoreStatus]:
-    if group == "backend":
-        if effective_lines <= 300:
-            return 100, "healthy"
-        if effective_lines <= 600:
-            return 50, "warning"
-        return 0, "danger"
+def linear_score(effective_lines: int, healthy_limit: int, danger_limit: int) -> float:
+    if effective_lines <= healthy_limit:
+        return 100
+    if effective_lines >= danger_limit:
+        return 0
 
-    if effective_lines <= 600:
-        return 100, "healthy"
-    if effective_lines <= 1000:
-        return 50, "warning"
-    return 0, "danger"
+    score = (danger_limit - effective_lines) / (danger_limit - healthy_limit) * 100
+    return round(score, 1)
+
+
+def score_file(group: GroupName, effective_lines: int) -> tuple[float, ScoreStatus]:
+    if group == "backend":
+        score = linear_score(effective_lines, healthy_limit=300, danger_limit=600)
+    else:
+        score = linear_score(effective_lines, healthy_limit=600, danger_limit=1000)
+
+    if score >= 100:
+        return score, "healthy"
+    if score <= 0:
+        return score, "danger"
+    return score, "warning"
 
 
 def iter_source_files(root: Path) -> Iterable[tuple[Path, GroupName]]:
@@ -383,7 +391,7 @@ def render_file_rows(files: list[FileScore]) -> str:
               <td><code>{html.escape(file.relative_path)}</code></td>
               <td>{'后端' if file.group == 'backend' else '前端'}</td>
               <td>{file.effective_lines}</td>
-              <td>{file.score}</td>
+              <td>{format_score(file.score)}</td>
               <td><span class="pill {file.status}">{status_label(file.status)}</span></td>
               <td>{'计分' if file.included_in_score else '测试文件'}</td>
             </tr>
@@ -411,7 +419,7 @@ def render_top_files(files: list[FileScore]) -> str:
             <li data-group="{file.group}">
               <div>
                 <strong>{html.escape(file.relative_path)}</strong>
-                <span>{file.effective_lines} 行 · {file.score} 分</span>
+                <span>{file.effective_lines} 行 · {format_score(file.score)} 分</span>
               </div>
               <div class="rank-bar {file.status}"><span style="--target:{width}%"></span></div>
             </li>
@@ -692,7 +700,7 @@ def render_html(report: QualityReport) -> str:
     <header>
       <div>
         <h1>代码质量报告</h1>
-        <p class="subtitle">基于有效代码行数评分：后端 300 行以内满分、超过 600 行零分；前端 600 行以内满分、超过 1000 行零分。系统分数按所有参与评分文件平均。</p>
+        <p class="subtitle">基于有效代码行数评分：后端 300 行以内满分，300 到 600 行线性降至 0 分；前端 600 行以内满分，600 到 1000 行线性降至 0 分。系统分数按所有参与评分文件平均。</p>
       </div>
       <div class="meta">
         <span>生成时间</span><strong>{html.escape(generated_at)}</strong>
