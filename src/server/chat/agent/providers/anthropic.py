@@ -14,6 +14,7 @@ from ..contracts import (
     LLMToolCall,
 )
 from ..tools import AgentTool
+from .usage import anthropic_usage, to_plain_dict
 
 
 class AnthropicProvider(LLMProvider):
@@ -66,13 +67,23 @@ class AnthropicProvider(LLMProvider):
         if allow_tools:
             request_params["tools"] = [_anthropic_tool(tool) for tool in tools]
 
-        stream = self.client.messages.create(**request_params)
+        stream = await self.client.messages.create(**request_params)
         active_tool: dict[str, Any] | None = None
         tool_calls: list[LLMToolCall] = []
         thinking_blocks: list[dict[str, Any]] = []
+        latest_usage: dict[str, Any] = {}
 
         async for event in stream:
             event_type = str(getattr(event, "type", ""))
+            if event_type == "message_start":
+                message = getattr(event, "message", None)
+                latest_usage.update(to_plain_dict(getattr(message, "usage", None)))
+                continue
+
+            if event_type == "message_delta":
+                latest_usage.update(to_plain_dict(getattr(event, "usage", None)))
+                continue
+
             if event_type == "content_block_start":
                 block = getattr(event, "content_block", None)
                 block_type = str(getattr(block, "type", ""))
@@ -128,6 +139,9 @@ class AnthropicProvider(LLMProvider):
                 type="metadata",
                 provider_metadata={"anthropic_thinking_blocks": thinking_blocks},
             )
+        token_usage = anthropic_usage(self.name, self.model_id, latest_usage)
+        if token_usage is not None:
+            yield LLMProviderEvent(type="usage", usage=token_usage)
 
     def build_assistant_message(
         self,

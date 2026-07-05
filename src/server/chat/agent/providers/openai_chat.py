@@ -16,6 +16,7 @@ from ..contracts import (
     load_tool_arguments,
 )
 from ..tools import AgentTool
+from .usage import openai_chat_usage
 
 
 class OpenAIChatCompletionsProvider(LLMProvider):
@@ -63,6 +64,14 @@ class OpenAIChatCompletionsProvider(LLMProvider):
         tool_call_deltas: list[dict[str, Any]] = []
 
         async for chunk in stream:
+            usage = openai_chat_usage(
+                self.name,
+                self.model_id,
+                getattr(chunk, "usage", None),
+            )
+            if usage is not None:
+                yield LLMProviderEvent(type="usage", usage=usage)
+
             if not getattr(chunk, "choices", None):
                 continue
 

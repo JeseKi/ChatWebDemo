@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from .contracts import LLMImage, LLMMessage, LLMProvider, LLMToolCall
+from .contracts import LLMImage, LLMMessage, LLMProvider, LLMTokenUsage, LLMToolCall
 from .tools import AgentTool
 
 
@@ -25,6 +25,7 @@ class ChatRunEvent:
     content: str | None = None
     reasoning_content: str | None = None
     tool: ChatToolEventPayload | None = None
+    usage: LLMTokenUsage | None = None
 
 
 @dataclass
@@ -112,6 +113,9 @@ class BaseAgent:
 
                 if event.type == "metadata":
                     provider_metadata.update(event.provider_metadata)
+
+                if event.type == "usage" and event.usage is not None:
+                    yield ChatRunEvent(event="RunUsage", usage=event.usage)
 
             if not tool_calls:
                 return

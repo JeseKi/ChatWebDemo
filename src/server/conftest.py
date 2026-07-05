@@ -128,6 +128,7 @@ def test_db_engine() -> Iterator[Connection]:
     import src.server.oauth_provider.models  # noqa: F401
     import src.server.providers.models  # noqa: F401
     import src.server.chat.models  # noqa: F401
+    import src.server.token_audit.models  # noqa: F401
 
     Base.metadata.create_all(bind=keep_conn)
 

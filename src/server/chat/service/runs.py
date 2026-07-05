@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from src.server.chat.agent.base import ChatRunEvent as AgentRunEvent
 from src.server.chat.agent.contracts import LLMMessage
+from src.server.token_audit import service as token_audit_service
 
 from ..dao import ChatDAO
 from ..models import ChatRun, ChatRunEvent
@@ -184,6 +185,7 @@ async def _execute_run(
     content_chunks: list[str] = []
     tool_calls: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []
+    usage_request_index = 0
 
     try:
         runner = agent_runner or _default_agent_runner
@@ -195,6 +197,27 @@ async def _execute_run(
         )
         async for run_event in run_events:
             event_name = normalize_event_name(getattr(run_event, "event", ""))
+            usage = getattr(run_event, "usage", None)
+            if usage is not None and is_event(event_name, "run_usage"):
+                usage_request_index += 1
+                token_audit_service.create_usage_audit(
+                    db,
+                    user_id=run.user_id,
+                    session_id=run.session_id,
+                    run_id=run.id,
+                    request_index=usage_request_index,
+                    provider=usage.provider,
+                    model_id=usage.model_id,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    total_tokens=usage.total_tokens,
+                    reasoning_tokens=usage.reasoning_tokens,
+                    cached_input_tokens=usage.cached_input_tokens,
+                    tool_tokens=usage.tool_tokens,
+                    raw_usage=usage.raw_usage,
+                )
+                continue
+
             if is_event(event_name, "tool_call_started"):
                 tool_call = tool_call_from_event(
                     run_event,

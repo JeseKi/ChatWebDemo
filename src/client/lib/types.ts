@@ -274,6 +274,56 @@ export interface AdminScopeUpdatePayload {
   category: ScopeCategory
 }
 
+export interface TokenAuditSummary {
+  user_id: number
+  username: string
+  email: string
+  name: string | null
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  reasoning_tokens: number
+  cached_input_tokens: number
+  tool_tokens: number
+}
+
+export interface TokenAuditEvent {
+  id: number
+  user_id: number
+  username: string | null
+  session_id: string
+  run_id: string
+  request_index: number
+  provider: string
+  model_id: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  reasoning_tokens: number
+  cached_input_tokens: number
+  tool_tokens: number
+  raw_usage: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface TokenAuditEventsResponse {
+  items: TokenAuditEvent[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface TokenAuditQuery {
+  user_id?: number
+  provider?: string
+  model_id?: string
+  start_at?: string
+  end_at?: string
+  limit?: number
+  offset?: number
+}
+
 export interface ItemPayload {
   name: string
 }

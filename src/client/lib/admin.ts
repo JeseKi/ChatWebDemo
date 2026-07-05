@@ -8,6 +8,9 @@ import type {
   AdminUserCreatePayload,
   AdminUserScopesUpdatePayload,
   AdminUserUpdatePayload,
+  TokenAuditEventsResponse,
+  TokenAuditQuery,
+  TokenAuditSummary,
 } from './types'
 
 export async function createUser(
@@ -85,6 +88,24 @@ export async function updateUserScopes(
 ): Promise<AdminUser> {
   const { data } = await api.put<AdminUser>(`/admin/users/${userId}/scopes`, payload, {
     headers: buildTwoFactorHeaders(twoFactorCode),
+  })
+  return data
+}
+
+export async function listTokenAuditSummary(
+  query: TokenAuditQuery = {},
+): Promise<TokenAuditSummary[]> {
+  const { data } = await api.get<TokenAuditSummary[]>('/admin/token-audit/summary', {
+    params: query,
+  })
+  return data
+}
+
+export async function listTokenAuditEvents(
+  query: TokenAuditQuery = {},
+): Promise<TokenAuditEventsResponse> {
+  const { data } = await api.get<TokenAuditEventsResponse>('/admin/token-audit/events', {
+    params: query,
   })
   return data
 }

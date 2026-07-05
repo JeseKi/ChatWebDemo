@@ -272,6 +272,62 @@ def upgrade() -> None:
         sa.UniqueConstraint("name"),
     )
     op.create_table(
+        "token_usage_audits",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("session_id", sa.String(length=32), nullable=False),
+        sa.Column("run_id", sa.String(length=32), nullable=False),
+        sa.Column("request_index", sa.Integer(), nullable=False),
+        sa.Column("provider", sa.String(length=40), nullable=False),
+        sa.Column("model_id", sa.String(length=120), nullable=False),
+        sa.Column("input_tokens", sa.Integer(), nullable=False),
+        sa.Column("output_tokens", sa.Integer(), nullable=False),
+        sa.Column("total_tokens", sa.Integer(), nullable=False),
+        sa.Column("reasoning_tokens", sa.Integer(), nullable=False),
+        sa.Column("cached_input_tokens", sa.Integer(), nullable=False),
+        sa.Column("tool_tokens", sa.Integer(), nullable=False),
+        sa.Column("raw_usage_json", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("run_id", "request_index", name="uq_token_usage_run_request"),
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_created_at"),
+        "token_usage_audits",
+        ["created_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_model_id"),
+        "token_usage_audits",
+        ["model_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_provider"),
+        "token_usage_audits",
+        ["provider"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_run_id"),
+        "token_usage_audits",
+        ["run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_session_id"),
+        "token_usage_audits",
+        ["session_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_token_usage_audits_user_id"),
+        "token_usage_audits",
+        ["user_id"],
+        unique=False,
+    )
+    op.create_table(
         "external_providers",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("key", sa.String(length=80), nullable=False),
@@ -675,6 +731,25 @@ def downgrade() -> None:
     op.drop_table("oauth_provider_authorization_codes")
     op.drop_table("managed_scopes")
     op.drop_table("external_providers")
+    op.drop_index(op.f("ix_token_usage_audits_user_id"), table_name="token_usage_audits")
+    op.drop_index(
+        op.f("ix_token_usage_audits_session_id"),
+        table_name="token_usage_audits",
+    )
+    op.drop_index(op.f("ix_token_usage_audits_run_id"), table_name="token_usage_audits")
+    op.drop_index(
+        op.f("ix_token_usage_audits_provider"),
+        table_name="token_usage_audits",
+    )
+    op.drop_index(
+        op.f("ix_token_usage_audits_model_id"),
+        table_name="token_usage_audits",
+    )
+    op.drop_index(
+        op.f("ix_token_usage_audits_created_at"),
+        table_name="token_usage_audits",
+    )
+    op.drop_table("token_usage_audits")
     op.drop_table("example_items")
     op.drop_table("example_async_tasks")
     op.drop_index(

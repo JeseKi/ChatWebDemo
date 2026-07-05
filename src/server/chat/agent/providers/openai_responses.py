@@ -17,6 +17,7 @@ from ..contracts import (
     load_tool_arguments,
 )
 from ..tools import AgentTool
+from .usage import openai_responses_usage
 
 
 class OpenAIResponsesProvider(LLMProvider):
@@ -62,6 +63,7 @@ class OpenAIResponsesProvider(LLMProvider):
         stream = await self.client.responses.create(**request_params)
         calls: dict[int, dict[str, Any]] = {}
         response_items: list[dict[str, Any]] = []
+        token_usage = None
 
         async for event in stream:
             event_type = str(getattr(event, "type", ""))
@@ -114,6 +116,11 @@ class OpenAIResponsesProvider(LLMProvider):
                 output = getattr(response, "output", None)
                 if output is not None:
                     response_items = [_to_plain_dict(item) for item in output]
+                token_usage = openai_responses_usage(
+                    self.name,
+                    self.model_id,
+                    getattr(response, "usage", None),
+                )
 
         for index, call in sorted(calls.items()):
             name = call.get("name")
@@ -135,6 +142,8 @@ class OpenAIResponsesProvider(LLMProvider):
                 type="metadata",
                 provider_metadata={"response_items": response_items},
             )
+        if token_usage is not None:
+            yield LLMProviderEvent(type="usage", usage=token_usage)
 
     def build_assistant_message(
         self,

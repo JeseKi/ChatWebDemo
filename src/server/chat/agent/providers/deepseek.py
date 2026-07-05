@@ -18,6 +18,7 @@ from .openai_chat import (
     _openai_chat_tool,
     _to_chat_message,
 )
+from .usage import openai_chat_usage
 
 
 class DeepSeekProvider(OpenAIChatCompletionsProvider):
@@ -34,7 +35,11 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
     ):
-        super().__init__(client=client, model_id=model_id, stream_options={})
+        super().__init__(
+            client=client,
+            model_id=model_id,
+            stream_options={"include_usage": True},
+        )
         self.max_output = max_output
         self.reasoning_effort = reasoning_effort
         self.thinking_enabled = thinking_enabled
@@ -53,6 +58,8 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
             "stream": True,
             "user": user_id,
         }
+        if self.stream_options:
+            request_params["stream_options"] = self.stream_options
         if self.reasoning_effort:
             request_params["reasoning_effort"] = self.reasoning_effort
         if self.max_output is not None:
@@ -72,6 +79,14 @@ class DeepSeekProvider(OpenAIChatCompletionsProvider):
         tool_call_deltas: list[dict[str, Any]] = []
 
         async for chunk in stream:
+            usage = openai_chat_usage(
+                self.name,
+                self.model_id,
+                getattr(chunk, "usage", None),
+            )
+            if usage is not None:
+                yield LLMProviderEvent(type="usage", usage=usage)
+
             if not getattr(chunk, "choices", None):
                 continue
             delta = chunk.choices[0].delta

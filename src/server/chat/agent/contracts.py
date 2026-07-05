@@ -15,6 +15,7 @@ LLMProviderEventType = Literal[
     "reasoning_delta",
     "tool_call",
     "metadata",
+    "usage",
 ]
 
 
@@ -39,6 +40,19 @@ class LLMImage:
         return f"data:{self.mime_type};base64,{self.base64_data}"
 
 
+@dataclass(frozen=True)
+class LLMTokenUsage:
+    provider: str
+    model_id: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    tool_tokens: int | None = None
+    raw_usage: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class LLMMessage:
     role: AgentRole
@@ -57,6 +71,7 @@ class LLMProviderEvent:
     reasoning_content: str | None = None
     tool_call: LLMToolCall | None = None
     provider_metadata: dict[str, Any] = field(default_factory=dict)
+    usage: LLMTokenUsage | None = None
 
 
 class LLMProvider(ABC):

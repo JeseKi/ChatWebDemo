@@ -14,6 +14,7 @@ from ..contracts import (
     LLMToolCall,
 )
 from ..tools import AgentTool
+from .usage import google_usage
 
 
 class GoogleGeminiProvider(LLMProvider):
@@ -84,7 +85,17 @@ class GoogleGeminiProvider(LLMProvider):
         )
 
         tool_calls: list[LLMToolCall] = []
+        token_usage = None
         async for chunk in stream:
+            usage = google_usage(
+                self.name,
+                self.model_id,
+                getattr(chunk, "usage_metadata", None)
+                or getattr(chunk, "usageMetadata", None),
+            )
+            if usage is not None:
+                token_usage = usage
+
             text = getattr(chunk, "text", None)
             if text:
                 yield LLMProviderEvent(type="content_delta", content=str(text))
@@ -108,6 +119,8 @@ class GoogleGeminiProvider(LLMProvider):
 
         for tool_call in tool_calls:
             yield LLMProviderEvent(type="tool_call", tool_call=tool_call)
+        if token_usage is not None:
+            yield LLMProviderEvent(type="usage", usage=token_usage)
 
     def build_tool_message(self, tool_call: LLMToolCall, output: Any) -> LLMMessage:
         return LLMMessage(
