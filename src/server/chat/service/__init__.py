@@ -21,8 +21,10 @@ from .serializers import (
     build_fallback_parts,
     build_version_info,
     serialize_message,
+    serialize_run,
     serialize_session,
 )
+from .runs import stream_run_events
 from .sessions import activate_message_version, get_session_detail
 from .share import create_session_share, get_shared_image, get_shared_session
 from .streaming import stream_chat, stream_edit_message, stream_regenerate
@@ -46,10 +48,12 @@ __all__ = [
     "is_reasoning_event",
     "normalize_event_name",
     "serialize_message",
+    "serialize_run",
     "serialize_session",
     "sse_event",
     "stream_agent_events",
     "stream_chat",
     "stream_edit_message",
     "stream_regenerate",
+    "stream_run_events",
 ]

@@ -12,6 +12,7 @@ CHAT_SESSION_ID_PATTERN = r"^[A-Za-z0-9]{32}$"
 ChatRole = Literal["user", "assistant"]
 ToolCallStatus = Literal["running", "completed", "failed"]
 AssistantPartType = Literal["reasoning", "output", "tool"]
+ChatRunStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
 
 
 class ChatStreamRequest(BaseModel):
@@ -85,8 +86,21 @@ class ChatSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ChatRunOut(BaseModel):
+    id: str = Field(..., min_length=1, max_length=32)
+    session_id: str = Field(..., pattern=CHAT_SESSION_ID_PATTERN)
+    status: ChatRunStatus
+    assistant_message_id: int
+    latest_seq: int = 0
+    error: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 class ChatSessionDetailOut(ChatSessionOut):
     messages: list[ChatMessageOut]
+    active_run: ChatRunOut | None = None
 
 
 class ChatSessionShareOut(BaseModel):

@@ -96,8 +96,23 @@ export interface ChatSession {
   updated_at: string
 }
 
+export type ChatRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+
+export interface ChatRun {
+  id: string
+  session_id: string
+  status: ChatRunStatus
+  assistant_message_id: number
+  latest_seq: number
+  error: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
 export interface ChatSessionDetail extends ChatSession {
   messages: ChatMessage[]
+  active_run: ChatRun | null
 }
 
 export interface ChatSessionShare {
@@ -119,15 +134,20 @@ export interface SharedChatSession {
 }
 
 export type ChatStreamEvent =
-  | { type: 'session_ready'; session: ChatSession }
-  | { type: 'branch_reset'; parent_message_id: number | null; message_id?: number }
-  | { type: 'user_message'; message: ChatMessage }
-  | { type: 'reasoning_delta'; part_id: string; delta: string }
-  | { type: 'content_delta'; part_id: string; delta: string }
-  | { type: 'tool_call_started'; tool_call: ToolCallTrace }
-  | { type: 'tool_call_completed'; tool_call: ToolCallTrace }
-  | { type: 'error'; message: string }
-  | { type: 'done'; message: ChatMessage; session: ChatSession }
+  | ({ type: 'session_ready'; session: ChatSession; run?: { id: string } } & ChatStreamEventMeta)
+  | ({ type: 'branch_reset'; parent_message_id: number | null; message_id?: number } & ChatStreamEventMeta)
+  | ({ type: 'user_message'; message: ChatMessage } & ChatStreamEventMeta)
+  | ({ type: 'reasoning_delta'; part_id: string; delta: string } & ChatStreamEventMeta)
+  | ({ type: 'content_delta'; part_id: string; delta: string } & ChatStreamEventMeta)
+  | ({ type: 'tool_call_started'; tool_call: ToolCallTrace } & ChatStreamEventMeta)
+  | ({ type: 'tool_call_completed'; tool_call: ToolCallTrace } & ChatStreamEventMeta)
+  | ({ type: 'error'; message: string } & ChatStreamEventMeta)
+  | ({ type: 'done'; message: ChatMessage; session: ChatSession } & ChatStreamEventMeta)
+
+export interface ChatStreamEventMeta {
+  seq?: number
+  run_id?: string
+}
 
 export async function listChatModels(): Promise<ChatModelsResponse> {
   const { data } = await api.get<ChatModelsResponse>('/chat/models')
@@ -198,6 +218,51 @@ export async function streamChatMessage(params: {
     })),
   }, params, false)
   await consumeEventStream(response, params.onEvent)
+}
+
+export async function streamChatRunEvents(params: {
+  runId: string
+  after?: number
+  signal?: AbortSignal
+  onEvent: (event: ChatStreamEvent) => void
+}): Promise<void> {
+  const response = await sendRunStreamRequest(params, false)
+  await consumeEventStream(response, params.onEvent)
+}
+
+async function sendRunStreamRequest(
+  params: {
+    runId: string
+    after?: number
+    signal?: AbortSignal
+    onEvent: (event: ChatStreamEvent) => void
+  },
+  alreadyRetried: boolean,
+): Promise<Response> {
+  const token = getAccessToken()
+  const query = new URLSearchParams({ after: String(params.after ?? 0) })
+  const response = await fetch(`${getApiBaseUrl()}/chat/runs/${params.runId}/stream?${query}`, {
+    method: 'GET',
+    credentials: 'include',
+    signal: params.signal,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+
+  if (response.status === 401 && !alreadyRetried) {
+    const refreshedToken = await refreshAccessToken()
+    if (refreshedToken) {
+      return sendRunStreamRequest(params, true)
+    }
+  }
+
+  if (!response.ok || !response.body) {
+    const text = await response.text()
+    throw new Error(text || `请求失败：${response.status}`)
+  }
+
+  return response
 }
 
 export async function editChatMessage(params: {

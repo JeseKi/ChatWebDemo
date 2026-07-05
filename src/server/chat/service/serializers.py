@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..dao import ChatDAO, parse_message_parts, parse_tool_calls
-from ..models import ChatMessage, ChatSession
+from ..models import ChatMessage, ChatRun, ChatSession
 from ..tools import get_tool_display_name
 
 
@@ -39,6 +39,25 @@ def serialize_message(message: ChatMessage, dao: ChatDAO | None = None) -> dict[
         "parts": parts or build_fallback_parts(message.content, tool_calls),
         "sequence": message.sequence,
         "created_at": message.created_at.isoformat(),
+    }
+
+
+def serialize_run(run: ChatRun, dao: ChatDAO | None = None) -> dict[str, Any]:
+    latest_seq = (
+        dao.latest_run_event_sequence(run_id=run.id, user_id=run.user_id)
+        if dao is not None
+        else 0
+    )
+    return {
+        "id": run.id,
+        "session_id": run.session_id,
+        "status": run.status,
+        "assistant_message_id": run.assistant_message_id,
+        "latest_seq": latest_seq,
+        "error": run.error,
+        "created_at": run.created_at.isoformat(),
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
     }
 
 

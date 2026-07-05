@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import asyncio
 from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 from src.server.chat import service
 from src.server.auth.models import User
 from src.server.chat.models import ChatMessage, ChatSession, ChatSessionShare
+from src.server.chat.dao import ChatDAO
 
 
 def _login_admin(test_client):
@@ -156,6 +158,67 @@ def test_stream_chat_persists_reasoning_parts(
     assistant = detail_resp.json()["messages"][1]
     assert assistant["content"] == "订单会按时送达。"
     assert [part["type"] for part in assistant["parts"]] == ["reasoning", "output"]
+
+
+def test_stream_chat_background_run_survives_client_disconnect(
+    test_db_session, init_test_database, monkeypatch
+):
+    current_user = test_db_session.query(User).filter(User.username == "admin").one()
+
+    async def fake_stream_agent_events(prompt: str, *, user_id: str):
+        yield SimpleNamespace(event="RunContent", content="后台")
+        await asyncio.sleep(0.01)
+        yield SimpleNamespace(event="RunContent", content="完成")
+
+    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+
+    async def exercise_disconnect():
+        stream = service.stream_chat(
+            test_db_session,
+            current_user=current_user,
+            message="长任务",
+            session_id=None,
+            model_id="test-model",
+            thinking_effort="low",
+        )
+        first = _parse_sse(await stream.__anext__())[0]
+        second = _parse_sse(await stream.__anext__())[0]
+        assert first["event"] == "session_ready"
+        assert second["event"] == "user_message"
+        run_id = first["data"]["run"]["id"]
+        session_id = first["data"]["session"]["id"]
+        await stream.aclose()
+
+        dao = ChatDAO(test_db_session)
+        for _ in range(30):
+            await asyncio.sleep(0.02)
+            test_db_session.expire_all()
+            run = dao.get_run_by_id(run_id=run_id)
+            if run and run.status == "succeeded":
+                return session_id, run_id
+        raise AssertionError("background chat run did not finish")
+
+    session_id, run_id = asyncio.run(exercise_disconnect())
+    test_db_session.expire_all()
+    detail = service.get_session_detail(
+        test_db_session,
+        session_id=session_id,
+        current_user=current_user,
+    )
+
+    assert detail.active_run is None
+    assert [message.role for message in detail.messages] == ["user", "assistant"]
+    assert detail.messages[1].content == "后台完成"
+
+    dao = ChatDAO(test_db_session)
+    events = dao.list_run_events_after(run_id=run_id, user_id=current_user.id, after=0)
+    assert [event.type for event in events] == [
+        "session_ready",
+        "user_message",
+        "content_delta",
+        "content_delta",
+        "done",
+    ]
 
 
 def test_update_and_delete_chat_session(

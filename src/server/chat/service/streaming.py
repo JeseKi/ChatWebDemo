@@ -15,6 +15,7 @@ from ..schemas import ChatImageReference
 from .events import sse_event
 from .images import append_image_markers, escape_image_markers, extract_image_urls
 from .serializers import serialize_message, serialize_session
+from .runs import build_session_factory, manager, stream_run_events
 from .sessions import resolve_or_create_session
 from .streaming_support import (
     TransientMessage,
@@ -83,16 +84,44 @@ async def stream_chat(
         thinking_effort=normalized_effort,
         parent_message_id=session.active_leaf_message_id,
     )
-
-    yield sse_event("session_ready", {"session": serialize_session(session)})
-    yield sse_event("user_message", {"message": serialize_message(user_message, dao)})
-    async for event in stream_assistant_for_user(
-        dao,
-        current_user=current_user,
-        session=session,
-        user_message=user_message,
-        model_config=model_config,
+    assistant_message = dao.append_message(
+        session_id=session.id,
+        user_id=current_user.id,
+        role="assistant",
+        content="",
+        model_id=model_config.id,
         thinking_effort=normalized_effort,
+        parent_message_id=user_message.id,
+    )
+    run = dao.create_run(
+        session_id=session.id,
+        user_id=current_user.id,
+        user_message_id=user_message.id,
+        assistant_message_id=assistant_message.id,
+        model_id=model_config.id,
+        thinking_effort=normalized_effort,
+    )
+    session = dao.get_session(session_id=session.id, user_id=current_user.id) or session
+    dao.append_run_event(
+        run_id=run.id,
+        session_id=session.id,
+        user_id=current_user.id,
+        event_type="session_ready",
+        data={"session": serialize_session(session), "run": {"id": run.id}},
+    )
+    dao.append_run_event(
+        run_id=run.id,
+        session_id=session.id,
+        user_id=current_user.id,
+        event_type="user_message",
+        data={"message": serialize_message(user_message, dao)},
+    )
+
+    manager.start(run.id, build_session_factory(db))
+    async for event in stream_run_events(
+        db,
+        run_id=run.id,
+        user_id=current_user.id,
     ):
         yield event
 

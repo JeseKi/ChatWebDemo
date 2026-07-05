@@ -69,10 +69,10 @@ export function appendAssistantDelta(
   partId: string,
   delta: string,
 ): ChatMessage[] {
-  const streamingMessage = current.find((item) => item.id === STREAMING_MESSAGE_ID)
-  if (streamingMessage) {
+  const targetId = findActiveAssistantId(current)
+  if (targetId !== null) {
     return current.map((item) =>
-      item.id === STREAMING_MESSAGE_ID
+      item.id === targetId
         ? {
             ...item,
             content: item.content + delta,
@@ -99,8 +99,9 @@ export function appendAssistantReasoningDelta(
   delta: string,
 ): ChatMessage[] {
   const withAssistant = ensureStreamingAssistant(current, activeSessionId)
+  const targetId = findActiveAssistantId(withAssistant)
   return withAssistant.map((item) =>
-    item.id === STREAMING_MESSAGE_ID
+    item.id === targetId
       ? {
           ...item,
           parts: appendReasoningDelta(item.parts, partId, delta),
@@ -115,8 +116,9 @@ export function upsertAssistantToolCall(
   toolCall: ToolCallTrace,
 ): ChatMessage[] {
   const withAssistant = ensureStreamingAssistant(current, activeSessionId)
+  const targetId = findActiveAssistantId(withAssistant)
   return withAssistant.map((item) => {
-    if (item.id !== STREAMING_MESSAGE_ID) {
+    if (item.id !== targetId) {
       return item
     }
     return {
@@ -194,6 +196,14 @@ function sortMessages(messages: ChatMessage[]): ChatMessage[] {
     }
     return a.sequence - b.sequence || a.id - b.id
   })
+}
+
+function findActiveAssistantId(messages: ChatMessage[]): number | null {
+  if (messages.some((item) => item.id === STREAMING_MESSAGE_ID)) {
+    return STREAMING_MESSAGE_ID
+  }
+  const assistant = [...messages].reverse().find((item) => item.role === 'assistant')
+  return assistant?.id ?? null
 }
 
 function appendOutputDelta(

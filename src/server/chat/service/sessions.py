@@ -11,7 +11,7 @@ from src.server.auth.models import User
 from ..dao import ChatDAO
 from ..models import ChatSession
 from ..schemas import ChatMessageOut, ChatSessionDetailOut
-from .serializers import serialize_message, serialize_session
+from .serializers import serialize_message, serialize_run, serialize_session
 
 
 def get_session_detail(
@@ -26,7 +26,16 @@ def get_session_detail(
         ChatMessageOut.model_validate(serialize_message(message, dao))
         for message in dao.list_active_path(session=session)
     ]
-    return ChatSessionDetailOut.model_validate({**serialize_session(session), "messages": messages})
+    active_run = dao.get_active_run_for_session(
+        session_id=session.id,
+        user_id=current_user.id,
+    )
+    payload = {
+        **serialize_session(session),
+        "messages": messages,
+        "active_run": serialize_run(active_run, dao) if active_run else None,
+    }
+    return ChatSessionDetailOut.model_validate(payload)
 
 
 def activate_message_version(

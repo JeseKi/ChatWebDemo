@@ -6,6 +6,7 @@ import type {
   ChatImage,
   ChatMessage,
   ChatModel,
+  ChatRun,
   ChatSession,
   ChatSessionShare,
   ChatStreamEvent,
@@ -38,6 +39,7 @@ export function useChatPageController() {
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [streaming, setStreaming] = useState(false)
+  const [activeRun, setActiveRun] = useState<ChatRun | null>(null)
   const [sharing, setSharing] = useState(false)
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [activeShare, setActiveShare] = useState<ChatSessionShare | null>(null)
@@ -48,6 +50,8 @@ export function useChatPageController() {
   const [mutatingSessionId, setMutatingSessionId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
+  const subscribedRunIdRef = useRef<string | null>(null)
+  const lastRunSeqRef = useRef(0)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
 
   const updateActiveSessionId = useCallback((sessionId: string | null) => {
@@ -93,11 +97,13 @@ export function useChatPageController() {
     try {
       const detail = await chatApi.getChatSession(sessionId)
       setMessages(detail.messages)
+      setActiveRun(detail.active_run)
       upsertSession(detail)
     } catch (error) {
       toast.error(resolveErrorMessage(error))
       updateActiveSessionId(null)
       setMessages([])
+      setActiveRun(null)
       navigate('/chat', { replace: true })
     } finally {
       setLoadingMessages(false)
@@ -164,6 +170,7 @@ export function useChatPageController() {
     setMessages([])
     setInput('')
     setPendingImageFiles([])
+    setActiveRun(null)
     setEditingSessionId(null)
     setEditingTitle('')
     setEditingMessageId(null)
@@ -246,6 +253,8 @@ export function useChatPageController() {
   const stopStreaming = () => {
     abortRef.current?.abort()
     abortRef.current = null
+    subscribedRunIdRef.current = null
+    setActiveRun(null)
     setStreaming(false)
   }
 
@@ -293,7 +302,10 @@ export function useChatPageController() {
     setEditingMessageContent('')
   }
 
-  const handleStreamEvent = (event: ChatStreamEvent) => {
+  const handleStreamEvent = useCallback((event: ChatStreamEvent) => {
+    if (typeof event.seq === 'number') {
+      lastRunSeqRef.current = Math.max(lastRunSeqRef.current, event.seq)
+    }
     if (event.type === 'session_ready') {
       updateActiveSessionId(event.session.id)
       upsertSession(event.session)
@@ -339,12 +351,16 @@ export function useChatPageController() {
     if (event.type === 'done') {
       setMessages((current) => replaceStreamingMessage(current, event.message))
       upsertSession(event.session)
+      setActiveRun(null)
       return
     }
-    if (event.type === 'error') toast.error(event.message)
-  }
+    if (event.type === 'error') {
+      toast.error(event.message)
+      setActiveRun(null)
+    }
+  }, [navigate, toast, updateActiveSessionId, upsertSession])
 
-  const runStreamingRequest = async (
+  const runStreamingRequest = useCallback(async (
     request: (signal: AbortSignal, onEvent: (event: ChatStreamEvent) => void) => Promise<void>,
     beforeStart?: () => void,
   ) => {
@@ -361,7 +377,29 @@ export function useChatPageController() {
       abortRef.current = null
       setStreaming(false)
     }
-  }
+  }, [handleStreamEvent, refreshSessions, toast])
+
+  const resumeRun = useCallback(async (run: ChatRun) => {
+    if (subscribedRunIdRef.current === run.id) return
+    subscribedRunIdRef.current = run.id
+    lastRunSeqRef.current = run.latest_seq
+    await runStreamingRequest(
+      (signal, onEvent) =>
+        chatApi.streamChatRunEvents({
+          runId: run.id,
+          after: run.latest_seq,
+          signal,
+          onEvent,
+        }),
+    )
+    subscribedRunIdRef.current = null
+    setActiveRun(null)
+  }, [runStreamingRequest])
+
+  useEffect(() => {
+    if (!activeRun || !['queued', 'running'].includes(activeRun.status)) return
+    void resumeRun(activeRun)
+  }, [activeRun, resumeRun])
 
   const saveEditedMessage = async (messageId: number) => {
     const prompt = editingMessageContent.trim()
@@ -442,6 +480,7 @@ export function useChatPageController() {
           onEvent,
         }),
       () => {
+        setActiveRun(null)
         setInput('')
         setPendingImageFiles([])
         setMessages((current) =>

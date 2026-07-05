@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.server.dao.dao_base import BaseDAO
 
-from ..models import ChatMessage, ChatSession
+from ..models import ChatMessage, ChatRun, ChatRunEvent, ChatSession
 
 SESSION_ID_LENGTH = 32
 SESSION_ID_ALPHABET = string.ascii_letters + string.digits
@@ -85,10 +85,19 @@ class ChatDAO(BaseDAO):
     def list_active_path(self, *, session: ChatSession) -> list[ChatMessage]:
         if session.active_leaf_message_id is None:
             return []
-        messages = self.list_messages(session_id=session.id, user_id=session.user_id)
-        by_id = {message.id: message for message in messages}
+        message = self.get_message(
+            message_id=session.active_leaf_message_id,
+            user_id=session.user_id,
+        )
+        if message is None:
+            return []
+        return self.list_path_to_message(message=message)
+
+    def list_path_to_message(self, *, message: ChatMessage) -> list[ChatMessage]:
+        messages = self.list_messages(session_id=message.session_id, user_id=message.user_id)
+        by_id = {item.id: item for item in messages}
         path: list[ChatMessage] = []
-        current = by_id.get(session.active_leaf_message_id)
+        current = by_id.get(message.id)
         while current is not None:
             path.append(current)
             current = (
@@ -247,6 +256,157 @@ class ChatDAO(BaseDAO):
         if make_active_leaf:
             self.set_active_leaf(session_id=session_id, user_id=user_id, message_id=message.id)
         return message
+
+    def update_message_payload(
+        self,
+        *,
+        message_id: int,
+        user_id: int,
+        content: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+        parts: list[dict[str, Any]] | None = None,
+    ) -> ChatMessage | None:
+        message = self.get_message(message_id=message_id, user_id=user_id)
+        if not message:
+            return None
+        if content is not None:
+            message.content = content
+        if tool_calls is not None:
+            message.tool_calls_json = _dump_tool_calls(tool_calls)
+        if parts is not None:
+            message.parts_json = _dump_json_list(parts)
+        session = self.get_session(session_id=message.session_id, user_id=user_id)
+        if session:
+            session.updated_at = datetime.now(timezone.utc)
+        self.db_session.commit()
+        self.db_session.refresh(message)
+        return message
+
+    def create_run(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        user_message_id: int,
+        assistant_message_id: int,
+        model_id: str | None,
+        thinking_effort: str | None,
+    ) -> ChatRun:
+        run = ChatRun(
+            id=_generate_session_id(),
+            session_id=session_id,
+            user_id=user_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            status="queued",
+            model_id=model_id,
+            thinking_effort=thinking_effort,
+        )
+        self.db_session.add(run)
+        self.db_session.commit()
+        self.db_session.refresh(run)
+        return run
+
+    def get_run(self, *, run_id: str, user_id: int) -> ChatRun | None:
+        return (
+            self.db_session.query(ChatRun)
+            .filter(ChatRun.id == run_id, ChatRun.user_id == user_id)
+            .first()
+        )
+
+    def get_run_by_id(self, *, run_id: str) -> ChatRun | None:
+        return self.db_session.query(ChatRun).filter(ChatRun.id == run_id).first()
+
+    def get_active_run_for_session(
+        self, *, session_id: str, user_id: int
+    ) -> ChatRun | None:
+        return (
+            self.db_session.query(ChatRun)
+            .filter(
+                ChatRun.session_id == session_id,
+                ChatRun.user_id == user_id,
+                ChatRun.status.in_(("queued", "running")),
+            )
+            .order_by(ChatRun.created_at.desc())
+            .first()
+        )
+
+    def update_run_status(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        error: str | None = None,
+    ) -> ChatRun | None:
+        run = self.get_run_by_id(run_id=run_id)
+        if not run:
+            return None
+        now = datetime.now(timezone.utc)
+        run.status = status
+        if status == "running" and run.started_at is None:
+            run.started_at = now
+        if status in {"succeeded", "failed", "canceled"}:
+            run.finished_at = now
+        if error is not None:
+            run.error = error
+        self.db_session.commit()
+        self.db_session.refresh(run)
+        return run
+
+    def append_run_event(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        user_id: int,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> ChatRunEvent:
+        current_max = (
+            self.db_session.query(func.max(ChatRunEvent.sequence))
+            .filter(ChatRunEvent.run_id == run_id)
+            .scalar()
+        )
+        event = ChatRunEvent(
+            run_id=run_id,
+            session_id=session_id,
+            user_id=user_id,
+            sequence=(current_max or 0) + 1,
+            type=event_type,
+            data_json=json.dumps(data, ensure_ascii=False, default=str),
+        )
+        self.db_session.add(event)
+        self.db_session.commit()
+        self.db_session.refresh(event)
+        return event
+
+    def list_run_events_after(
+        self,
+        *,
+        run_id: str,
+        user_id: int,
+        after: int = 0,
+        limit: int = 100,
+    ) -> list[ChatRunEvent]:
+        return (
+            self.db_session.query(ChatRunEvent)
+            .filter(
+                ChatRunEvent.run_id == run_id,
+                ChatRunEvent.user_id == user_id,
+                ChatRunEvent.sequence > after,
+            )
+            .order_by(ChatRunEvent.sequence.asc())
+            .limit(limit)
+            .all()
+        )
+
+    def latest_run_event_sequence(self, *, run_id: str, user_id: int) -> int:
+        value = (
+            self.db_session.query(func.max(ChatRunEvent.sequence))
+            .filter(ChatRunEvent.run_id == run_id, ChatRunEvent.user_id == user_id)
+            .scalar()
+        )
+        return int(value or 0)
 
     def touch_session(self, *, session_id: str, user_id: int) -> None:
         session = self.get_session(session_id=session_id, user_id=user_id)

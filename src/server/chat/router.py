@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Security, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Security, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -264,6 +264,25 @@ async def activate_message_version(
         )
 
     return await run_in_thread(_activate)
+
+
+@router.get("/runs/{run_id}/stream", summary="恢复订阅聊天任务事件")
+async def stream_run(
+    run_id: str,
+    after: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+):
+    return StreamingResponse(
+        service.stream_run_events(
+            db,
+            run_id=run_id,
+            user_id=current_user.id,
+            after=after,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/stream", summary="流式发送聊天消息")
