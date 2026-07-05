@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from types import SimpleNamespace
 
@@ -135,6 +136,85 @@ def test_admin_token_audit_summary_and_events(test_client, test_db_session, init
     assert payload["total"] == 2
     assert len(payload["items"]) == 1
     assert payload["items"][0]["username"] == "admin"
+
+
+def test_admin_token_audit_timeseries_and_breakdown(
+    test_client, test_db_session, init_test_database
+):
+    admin = test_db_session.query(User).filter(User.username == "admin").one()
+    member = User(username="auditmember", email="auditmember@example.com", name="审计成员")
+    member.set_password("Password123")
+    test_db_session.add(member)
+    test_db_session.commit()
+
+    base_time = datetime(2026, 1, 2, 8, 30, tzinfo=timezone.utc)
+
+    first = service.create_usage_audit(
+        test_db_session,
+        user_id=admin.id,
+        session_id="A" * 32,
+        run_id="T" * 32,
+        request_index=1,
+        provider="openai_chat",
+        model_id="gpt-test",
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        reasoning_tokens=2,
+        cached_input_tokens=1,
+        tool_tokens=0,
+        raw_usage=None,
+    )
+    second = service.create_usage_audit(
+        test_db_session,
+        user_id=member.id,
+        session_id="B" * 32,
+        run_id="U" * 32,
+        request_index=1,
+        provider="google",
+        model_id="gemini-test",
+        input_tokens=30,
+        output_tokens=10,
+        total_tokens=42,
+        reasoning_tokens=1,
+        cached_input_tokens=3,
+        tool_tokens=2,
+        raw_usage=None,
+    )
+    first.created_at = base_time
+    second.created_at = base_time + timedelta(hours=2)
+    test_db_session.commit()
+
+    headers = _login_admin(test_client)
+    timeseries_resp = test_client.get(
+        "/api/admin/token-audit/timeseries",
+        params={"group_by": "hour"},
+        headers=headers,
+    )
+    assert timeseries_resp.status_code == HTTPStatus.OK, timeseries_resp.text
+    points = timeseries_resp.json()
+    assert [point["total_tokens"] for point in points] == [15, 42]
+    assert points[0]["request_count"] == 1
+
+    provider_resp = test_client.get(
+        "/api/admin/token-audit/breakdown",
+        params={"dimension": "provider"},
+        headers=headers,
+    )
+    assert provider_resp.status_code == HTTPStatus.OK, provider_resp.text
+    providers = provider_resp.json()
+    assert providers[0]["key"] == "google"
+    assert providers[0]["tool_tokens"] == 2
+
+    user_resp = test_client.get(
+        "/api/admin/token-audit/breakdown",
+        params={"dimension": "user", "limit": 1},
+        headers=headers,
+    )
+    assert user_resp.status_code == HTTPStatus.OK, user_resp.text
+    users = user_resp.json()
+    assert users[0]["username"] == "auditmember"
+    assert users[0]["email"] == "auditmember@example.com"
 
 
 def test_admin_token_audit_requires_admin(test_client, test_db_session, init_test_database):

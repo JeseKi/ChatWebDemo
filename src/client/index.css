@@ -752,3 +752,127 @@ a {
 .chat-share-preview-markdown .chat-markdown pre {
   margin-bottom: 0;
 }
+
+.token-audit-trend-layer {
+  transform-origin: center bottom;
+  animation: token-audit-rise 420ms ease-out both;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.token-audit-trend-layer:hover {
+  opacity: 0.52;
+  transform: translateY(-2px);
+}
+
+.token-audit-trend-line {
+  animation: token-audit-line-draw 700ms ease-out both;
+}
+
+.token-audit-donut-segment {
+  cursor: pointer;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: token-audit-pop-in 420ms ease-out both;
+  transition:
+    filter 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.token-audit-donut-segment:hover {
+  filter: drop-shadow(0 7px 12px rgba(15, 23, 42, 0.2));
+  transform: scale(1.04);
+}
+
+.token-audit-legend-row {
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  cursor: default;
+  transition:
+    background-color 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.token-audit-legend-row:hover {
+  background: var(--app-surface-muted);
+  transform: translateX(2px);
+}
+
+.token-audit-ranking-bar {
+  animation: token-audit-bar-grow 520ms ease-out both;
+  transform-origin: left center;
+  transition:
+    filter 0.2s ease,
+    transform 0.2s ease;
+}
+
+.token-audit-ranking-bar:hover {
+  filter: saturate(1.18);
+  transform: scaleX(1.015);
+}
+
+.token-audit-composition-segment {
+  animation: token-audit-bar-grow 460ms ease-out both;
+  transform-origin: left center;
+  transition:
+    filter 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.token-audit-composition-segment:hover {
+  filter: brightness(1.08);
+}
+
+@keyframes token-audit-rise {
+  from {
+    transform: translateY(10px) scaleY(0.92);
+  }
+  to {
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes token-audit-line-draw {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 80;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes token-audit-pop-in {
+  from {
+    transform: scale(0.88);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes token-audit-bar-grow {
+  from {
+    opacity: 0;
+    transform: scaleX(0.12);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-audit-trend-layer,
+  .token-audit-trend-line,
+  .token-audit-donut-segment,
+  .token-audit-ranking-bar,
+  .token-audit-composition-segment {
+    animation: none;
+  }
+}

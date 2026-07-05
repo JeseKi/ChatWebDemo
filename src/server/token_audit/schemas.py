@@ -23,6 +23,30 @@ class TokenAuditSummaryOut(BaseModel):
     tool_tokens: int
 
 
+class TokenAuditAggregateBase(BaseModel):
+    request_count: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    reasoning_tokens: int
+    cached_input_tokens: int
+    tool_tokens: int
+
+
+class TokenAuditTimeseriesPointOut(TokenAuditAggregateBase):
+    bucket_start: datetime
+
+
+class TokenAuditBreakdownOut(TokenAuditAggregateBase):
+    key: str
+    label: str
+    user_id: int | None = None
+    username: str | None = None
+    email: str | None = None
+
+    model_config = ConfigDict(protected_namespaces=())
+
+
 class TokenAuditEventOut(BaseModel):
     id: int
     user_id: int

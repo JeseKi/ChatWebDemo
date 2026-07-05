@@ -8,9 +8,13 @@ import type {
   AdminUserCreatePayload,
   AdminUserScopesUpdatePayload,
   AdminUserUpdatePayload,
+  TokenAuditBreakdown,
+  TokenAuditBreakdownDimension,
   TokenAuditEventsResponse,
   TokenAuditQuery,
   TokenAuditSummary,
+  TokenAuditTimeseriesGroupBy,
+  TokenAuditTimeseriesPoint,
 } from './types'
 
 export async function createUser(
@@ -106,6 +110,27 @@ export async function listTokenAuditEvents(
 ): Promise<TokenAuditEventsResponse> {
   const { data } = await api.get<TokenAuditEventsResponse>('/admin/token-audit/events', {
     params: query,
+  })
+  return data
+}
+
+export async function listTokenAuditTimeseries(
+  query: TokenAuditQuery = {},
+  groupBy: TokenAuditTimeseriesGroupBy = 'day',
+): Promise<TokenAuditTimeseriesPoint[]> {
+  const { data } = await api.get<TokenAuditTimeseriesPoint[]>('/admin/token-audit/timeseries', {
+    params: { ...query, group_by: groupBy },
+  })
+  return data
+}
+
+export async function listTokenAuditBreakdown(
+  query: TokenAuditQuery = {},
+  dimension: TokenAuditBreakdownDimension,
+  limit = 20,
+): Promise<TokenAuditBreakdown[]> {
+  const { data } = await api.get<TokenAuditBreakdown[]>('/admin/token-audit/breakdown', {
+    params: { ...query, dimension, limit },
   })
   return data
 }

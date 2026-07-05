@@ -314,6 +314,31 @@ export interface TokenAuditEventsResponse {
   offset: number
 }
 
+export interface TokenAuditAggregate {
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  reasoning_tokens: number
+  cached_input_tokens: number
+  tool_tokens: number
+}
+
+export interface TokenAuditTimeseriesPoint extends TokenAuditAggregate {
+  bucket_start: string
+}
+
+export interface TokenAuditBreakdown extends TokenAuditAggregate {
+  key: string
+  label: string
+  user_id: number | null
+  username: string | null
+  email: string | null
+}
+
+export type TokenAuditBreakdownDimension = 'user' | 'provider' | 'model'
+export type TokenAuditTimeseriesGroupBy = 'hour' | 'day'
+
 export interface TokenAuditQuery {
   user_id?: number
   provider?: string
@@ -322,6 +347,8 @@ export interface TokenAuditQuery {
   end_at?: string
   limit?: number
   offset?: number
+  group_by?: TokenAuditTimeseriesGroupBy
+  dimension?: TokenAuditBreakdownDimension
 }
 
 export interface ItemPayload {

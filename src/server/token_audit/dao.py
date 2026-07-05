@@ -89,6 +89,27 @@ class TokenUsageAuditDAO(BaseDAO):
             .all()
         )
 
+    def list_events_for_aggregation(
+        self,
+        *,
+        user_id: int | None = None,
+        provider: str | None = None,
+        model_id: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> list[TokenUsageAudit]:
+        return (
+            self._filtered_query(
+                user_id=user_id,
+                provider=provider,
+                model_id=model_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+            .order_by(TokenUsageAudit.created_at.asc(), TokenUsageAudit.id.asc())
+            .all()
+        )
+
     def count_events(
         self,
         *,
