@@ -53,13 +53,23 @@ async def _wait_for_run_succeeded(test_db_session, *, run_id: str) -> None:
     raise AssertionError("background chat run did not finish")
 
 
+def _explicit_agent_runner(handler):
+    async def runner(messages, *, model_config, thinking_effort, user_id: str):
+        assert model_config.id == "test-model"
+        assert thinking_effort == "low"
+        async for event in handler(messages, user_id=user_id):
+            yield event
+
+    return runner
+
+
 def test_stream_chat_persists_messages_and_tool_calls(
     test_client, init_test_database, monkeypatch
 ):
     headers = _login_admin(test_client)
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str):
-        assert "ORDER-8831" in prompt
+    async def fake_stream_agent_events(messages, *, user_id: str):
+        assert "ORDER-8831" in messages
         assert user_id == "1"
         yield SimpleNamespace(
             event="ToolCallStarted",
@@ -80,7 +90,7 @@ def test_stream_chat_persists_messages_and_tool_calls(
         yield SimpleNamespace(event="RunContent", content="订单已延迟")
         yield SimpleNamespace(event="RunContent", content="，预计 7 月 6 日送达。")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_stream_agent_events))
 
     resp = test_client.post(
         "/api/chat/stream",
@@ -133,12 +143,12 @@ def test_stream_chat_persists_reasoning_parts(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str):
+    async def fake_stream_agent_events(messages, *, user_id: str):
         yield SimpleNamespace(event="RunReasoningContent", reasoning_content="先检查订单状态")
         yield SimpleNamespace(event="RunReasoningContent", reasoning_content="，再组织回复。")
         yield SimpleNamespace(event="RunContent", content="订单会按时送达。")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_stream_agent_events))
 
     resp = test_client.post(
         "/api/chat/stream",
@@ -183,12 +193,12 @@ def test_stream_chat_background_run_survives_client_disconnect(
 ):
     current_user = test_db_session.query(User).filter(User.username == "admin").one()
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str):
+    async def fake_stream_agent_events(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="后台")
         await asyncio.sleep(0.01)
         yield SimpleNamespace(event="RunContent", content="完成")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_stream_agent_events))
 
     async def exercise_disconnect():
         stream = service.stream_chat(
@@ -245,10 +255,10 @@ def test_edit_message_background_run_survives_client_disconnect(
 ):
     current_user = test_db_session.query(User).filter(User.username == "admin").one()
 
-    async def first_agent(prompt: str, *, user_id: str):
+    async def first_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="旧回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(first_agent))
     initial_events = asyncio.run(
         _collect_stream_events(
             service.stream_chat(
@@ -269,11 +279,11 @@ def test_edit_message_background_run_survives_client_disconnect(
         current_user=current_user,
     ).messages[0].id
 
-    async def edited_agent(prompt: str, *, user_id: str):
+    async def edited_agent(messages, *, user_id: str):
         await asyncio.sleep(0.01)
         yield SimpleNamespace(event="RunContent", content="新回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", edited_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(edited_agent))
 
     async def exercise_disconnect():
         stream = service.stream_edit_message(
@@ -329,10 +339,10 @@ def test_regenerate_background_run_survives_client_disconnect(
 ):
     current_user = test_db_session.query(User).filter(User.username == "admin").one()
 
-    async def first_agent(prompt: str, *, user_id: str):
+    async def first_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第一次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(first_agent))
     initial_events = asyncio.run(
         _collect_stream_events(
             service.stream_chat(
@@ -348,11 +358,11 @@ def test_regenerate_background_run_survives_client_disconnect(
     session_id = initial_events[-1]["data"]["session"]["id"]
     old_assistant_id = initial_events[-1]["data"]["message"]["id"]
 
-    async def regenerated_agent(prompt: str, *, user_id: str):
+    async def regenerated_agent(messages, *, user_id: str):
         await asyncio.sleep(0.01)
         yield SimpleNamespace(event="RunContent", content="第二次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", regenerated_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(regenerated_agent))
 
     async def exercise_disconnect():
         stream = service.stream_regenerate(
@@ -403,10 +413,10 @@ def test_update_and_delete_chat_session(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_stream_agent_events(prompt: str, *, user_id: str):
+    async def fake_stream_agent_events(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="你好")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_stream_agent_events)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_stream_agent_events))
 
     create_resp = test_client.post(
         "/api/chat/stream",
@@ -456,10 +466,10 @@ def test_edit_user_message_creates_active_branch(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str):
+    async def first_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="旧回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(first_agent))
     create_resp = test_client.post(
         "/api/chat/stream",
         json={"message": "旧问题"},
@@ -472,12 +482,12 @@ def test_edit_user_message_creates_active_branch(
     detail_resp = test_client.get(f"/api/chat/sessions/{session_id}", headers=headers)
     old_user_id = detail_resp.json()["messages"][0]["id"]
 
-    async def edited_agent(prompt: str, *, user_id: str):
-        assert "新问题" in prompt
-        assert "旧回复" not in prompt
+    async def edited_agent(messages, *, user_id: str):
+        assert "新问题" in messages
+        assert "旧回复" not in messages
         yield SimpleNamespace(event="RunContent", content="新回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", edited_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(edited_agent))
     edit_resp = test_client.post(
         f"/api/chat/messages/{old_user_id}/edit-stream",
         json={"message": "新问题"},
@@ -514,10 +524,10 @@ def test_regenerate_replaces_latest_assistant_branch(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str):
+    async def first_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第一次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(first_agent))
     create_resp = test_client.post(
         "/api/chat/stream",
         json={"message": "请回答"},
@@ -528,12 +538,12 @@ def test_regenerate_replaces_latest_assistant_branch(
     session_id = create_done["session"]["id"]
     old_assistant_id = create_done["message"]["id"]
 
-    async def regenerated_agent(prompt: str, *, user_id: str):
-        assert "请回答" in prompt
-        assert "第一次回复" not in prompt
+    async def regenerated_agent(messages, *, user_id: str):
+        assert "请回答" in messages
+        assert "第一次回复" not in messages
         yield SimpleNamespace(event="RunContent", content="第二次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", regenerated_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(regenerated_agent))
     regenerate_resp = test_client.post(
         f"/api/chat/sessions/{session_id}/regenerate-stream",
         headers=headers,
@@ -566,10 +576,10 @@ def test_create_share_publicly_previews_immutable_snapshot(
 ):
     headers = _login_admin(test_client)
 
-    async def first_agent(prompt: str, *, user_id: str):
+    async def first_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第一次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(first_agent))
     create_resp = test_client.post(
         "/api/chat/stream",
         json={"message": "分享这个会话"},
@@ -607,10 +617,10 @@ def test_create_share_publicly_previews_immutable_snapshot(
         "第一次回复",
     ]
 
-    async def second_agent(prompt: str, *, user_id: str):
+    async def second_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="第二次回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", second_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(second_agent))
     regenerate_resp = test_client.post(
         f"/api/chat/sessions/{session_id}/regenerate-stream",
         headers=headers,
@@ -668,10 +678,10 @@ def test_shared_session_rejects_tampered_signature(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_agent(prompt: str, *, user_id: str):
+    async def fake_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_agent))
     create_resp = test_client.post(
         "/api/chat/stream",
         json={"message": "签名测试"},
@@ -694,10 +704,10 @@ def test_share_requires_session_owner(
 ):
     headers = _login_admin(test_client)
 
-    async def fake_agent(prompt: str, *, user_id: str):
+    async def fake_agent(messages, *, user_id: str):
         yield SimpleNamespace(event="RunContent", content="回复")
 
-    monkeypatch.setattr(service, "stream_agent_events", fake_agent)
+    monkeypatch.setattr(service, "stream_agent_events", _explicit_agent_runner(fake_agent))
     create_resp = test_client.post(
         "/api/chat/stream",
         json={"message": "私有会话"},

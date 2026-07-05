@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from contextvars import ContextVar
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -28,47 +27,19 @@ from .constants import (
     CHAT_AGENT_INSTRUCTIONS,
 )
 
-_current_model_config: ContextVar[ModelConfig | None] = ContextVar(
-    "current_model_config",
-    default=None,
-)
-_current_thinking_effort: ContextVar[str | None] = ContextVar(
-    "current_thinking_effort",
-    default=None,
-)
-
-
 async def stream_agent_events(
-    prompt: str | list[LLMMessage],
+    messages: list[LLMMessage],
     *,
+    model_config: ModelConfig,
+    thinking_effort: str | None,
     user_id: str,
 ) -> AsyncIterator[ChatRunEvent]:
     agent = build_chat_agent(
-        model_config=_current_model_config.get(),
-        thinking_effort=_current_thinking_effort.get(),
+        model_config=model_config,
+        thinking_effort=thinking_effort,
     )
-    if isinstance(prompt, list):
-        async for event in agent.arun_messages(prompt, user_id=user_id):
-            yield event
-        return
-    async for event in agent.arun(prompt, user_id=user_id):
+    async for event in agent.arun_messages(messages, user_id=user_id):
         yield event
-
-
-def set_agent_model_context(
-    model_config: ModelConfig | None,
-    thinking_effort: str | None,
-) -> tuple[object, object]:
-    return (
-        _current_model_config.set(model_config),
-        _current_thinking_effort.set(thinking_effort),
-    )
-
-
-def reset_agent_model_context(tokens: tuple[object, object]) -> None:
-    model_token, effort_token = tokens
-    _current_model_config.reset(model_token)  # type: ignore[arg-type]
-    _current_thinking_effort.reset(effort_token)  # type: ignore[arg-type]
 
 
 class OpenAICompatibleChatAgent(BaseAgent):

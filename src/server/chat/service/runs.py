@@ -6,13 +6,15 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from src.server.chat.agent.base import ChatRunEvent as AgentRunEvent
+from src.server.chat.agent.contracts import LLMMessage
+
 from ..dao import ChatDAO
 from ..models import ChatRun, ChatRunEvent
-from .agent import reset_agent_model_context, set_agent_model_context
 from .context_compression import ContextCompressionError, prepare_agent_context
 from .events import (
     append_output_part,
@@ -27,16 +29,29 @@ from .events import (
     tool_call_from_event,
 )
 from .images import escape_image_markers
-from .model_catalog import get_model
+from .model_catalog import ModelConfig, get_model
 from .serializers import serialize_message, serialize_session
 
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "canceled"}
 
 
+class AgentRunner(Protocol):
+    def __call__(
+        self,
+        messages: list[LLMMessage],
+        *,
+        model_config: ModelConfig,
+        thinking_effort: str | None,
+        user_id: str,
+    ) -> AsyncIterator[AgentRunEvent]:
+        ...
+
+
 class ChatRunManager:
-    def __init__(self) -> None:
+    def __init__(self, agent_runner: AgentRunner | None = None) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._agent_runner = agent_runner
 
     def start(self, run_id: str, session_factory: Callable[[], Session]) -> None:
         if run_id in self._tasks:
@@ -55,7 +70,11 @@ class ChatRunManager:
 
         async with lock:
             with session_factory() as db:
-                await _execute_run(db, run_id=run_id)
+                await _execute_run(
+                    db,
+                    run_id=run_id,
+                    agent_runner=self._agent_runner or _default_agent_runner,
+                )
 
 
 manager = ChatRunManager()
@@ -123,7 +142,12 @@ async def stream_run_events(
         await asyncio.sleep(poll_interval)
 
 
-async def _execute_run(db: Session, *, run_id: str) -> None:
+async def _execute_run(
+    db: Session,
+    *,
+    run_id: str,
+    agent_runner: AgentRunner | None = None,
+) -> None:
     dao = ChatDAO(db)
     run = dao.get_run_by_id(run_id=run_id)
     if run is None or run.status in TERMINAL_RUN_STATUSES:
@@ -162,84 +186,86 @@ async def _execute_run(db: Session, *, run_id: str) -> None:
     parts: list[dict[str, Any]] = []
 
     try:
-        tokens = set_agent_model_context(model_config, run.thinking_effort)
-        try:
-            run_events = _stream_agent_events()(agent_input, user_id=str(run.user_id))
-            async for run_event in run_events:
-                event_name = normalize_event_name(getattr(run_event, "event", ""))
-                if is_event(event_name, "tool_call_started"):
-                    tool_call = tool_call_from_event(
-                        run_event,
-                        status_value="running",
-                        fallback_id=f"tool-{len(tool_calls) + 1}",
-                    )
-                    tool_calls.append(tool_call)
-                    parts.append({"id": tool_call["id"], "type": "tool", "tool_call": tool_call})
-                    dao.update_message_payload(
-                        message_id=assistant_message.id,
-                        user_id=run.user_id,
-                        tool_calls=tool_calls,
-                        parts=parts,
-                    )
-                    _append_event(dao, run, "tool_call_started", {"tool_call": tool_call})
-                    continue
+        runner = agent_runner or _default_agent_runner
+        run_events = runner(
+            agent_input,
+            model_config=model_config,
+            thinking_effort=run.thinking_effort,
+            user_id=str(run.user_id),
+        )
+        async for run_event in run_events:
+            event_name = normalize_event_name(getattr(run_event, "event", ""))
+            if is_event(event_name, "tool_call_started"):
+                tool_call = tool_call_from_event(
+                    run_event,
+                    status_value="running",
+                    fallback_id=f"tool-{len(tool_calls) + 1}",
+                )
+                tool_calls.append(tool_call)
+                parts.append({"id": tool_call["id"], "type": "tool", "tool_call": tool_call})
+                dao.update_message_payload(
+                    message_id=assistant_message.id,
+                    user_id=run.user_id,
+                    tool_calls=tool_calls,
+                    parts=parts,
+                )
+                _append_event(dao, run, "tool_call_started", {"tool_call": tool_call})
+                continue
 
-                if is_event(event_name, "tool_call_completed"):
-                    completed = tool_call_from_event(
-                        run_event,
-                        status_value="completed",
-                        fallback_id=f"tool-{len(tool_calls) + 1}",
-                    )
-                    merge_completed_tool_call(tool_calls, completed)
-                    merge_completed_tool_part(parts, completed)
-                    dao.update_message_payload(
-                        message_id=assistant_message.id,
-                        user_id=run.user_id,
-                        tool_calls=tool_calls,
-                        parts=parts,
-                    )
-                    _append_event(dao, run, "tool_call_completed", {"tool_call": completed})
-                    continue
+            if is_event(event_name, "tool_call_completed"):
+                completed = tool_call_from_event(
+                    run_event,
+                    status_value="completed",
+                    fallback_id=f"tool-{len(tool_calls) + 1}",
+                )
+                merge_completed_tool_call(tool_calls, completed)
+                merge_completed_tool_part(parts, completed)
+                dao.update_message_payload(
+                    message_id=assistant_message.id,
+                    user_id=run.user_id,
+                    tool_calls=tool_calls,
+                    parts=parts,
+                )
+                _append_event(dao, run, "tool_call_completed", {"tool_call": completed})
+                continue
 
-                content = getattr(run_event, "content", None)
-                if content and is_content_event(event_name):
-                    text = escape_image_markers(str(content))
-                    content_chunks.append(text)
-                    part_id = append_output_part(parts, text)
-                    dao.update_message_payload(
-                        message_id=assistant_message.id,
-                        user_id=run.user_id,
-                        content="".join(content_chunks),
-                        tool_calls=tool_calls,
-                        parts=parts,
-                    )
-                    _append_event(
-                        dao,
-                        run,
-                        "content_delta",
-                        {"part_id": part_id, "delta": text},
-                    )
-                    continue
+            content = getattr(run_event, "content", None)
+            if content and is_content_event(event_name):
+                text = escape_image_markers(str(content))
+                content_chunks.append(text)
+                part_id = append_output_part(parts, text)
+                dao.update_message_payload(
+                    message_id=assistant_message.id,
+                    user_id=run.user_id,
+                    content="".join(content_chunks),
+                    tool_calls=tool_calls,
+                    parts=parts,
+                )
+                _append_event(
+                    dao,
+                    run,
+                    "content_delta",
+                    {"part_id": part_id, "delta": text},
+                )
+                continue
 
-                reasoning_content = getattr(run_event, "reasoning_content", None)
-                if reasoning_content and is_reasoning_event(event_name):
-                    text = escape_image_markers(str(reasoning_content))
-                    part_id = append_reasoning_part(parts, text)
-                    dao.update_message_payload(
-                        message_id=assistant_message.id,
-                        user_id=run.user_id,
-                        content="".join(content_chunks),
-                        tool_calls=tool_calls,
-                        parts=parts,
-                    )
-                    _append_event(
-                        dao,
-                        run,
-                        "reasoning_delta",
-                        {"part_id": part_id, "delta": text},
-                    )
-        finally:
-            reset_agent_model_context(tokens)
+            reasoning_content = getattr(run_event, "reasoning_content", None)
+            if reasoning_content and is_reasoning_event(event_name):
+                text = escape_image_markers(str(reasoning_content))
+                part_id = append_reasoning_part(parts, text)
+                dao.update_message_payload(
+                    message_id=assistant_message.id,
+                    user_id=run.user_id,
+                    content="".join(content_chunks),
+                    tool_calls=tool_calls,
+                    parts=parts,
+                )
+                _append_event(
+                    dao,
+                    run,
+                    "reasoning_delta",
+                    {"part_id": part_id, "delta": text},
+                )
     except Exception as exc:
         _fail_run(dao, run, f"Agent 请求失败: {exc}", content_chunks=content_chunks, parts=parts)
         return
@@ -303,7 +329,18 @@ def _fail_run(
     dao.update_run_status(run_id=run.id, status="failed", error=message)
 
 
-def _stream_agent_events() -> Callable[..., AsyncIterator[Any]]:
+def _default_agent_runner(
+    messages: list[LLMMessage],
+    *,
+    model_config: ModelConfig,
+    thinking_effort: str | None,
+    user_id: str,
+) -> AsyncIterator[AgentRunEvent]:
     from src.server.chat import service
 
-    return service.stream_agent_events
+    return service.stream_agent_events(
+        messages,
+        model_config=model_config,
+        thinking_effort=thinking_effort,
+        user_id=user_id,
+    )
