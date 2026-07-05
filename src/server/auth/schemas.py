@@ -44,6 +44,7 @@ class UserProfile(BaseModel):
     status: UserStatus
     two_factor_enabled: bool = False
     two_factor_confirmed_at: Optional[datetime] = None
+    effective_scopes: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

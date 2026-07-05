@@ -126,6 +126,7 @@ export interface UserProfile {
   status: UserStatus
   two_factor_enabled: boolean
   two_factor_confirmed_at: string | null
+  effective_scopes: string[]
 }
 
 export interface LoginPayload {

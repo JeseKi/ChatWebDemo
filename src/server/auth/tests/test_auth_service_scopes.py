@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.server.auth.models import User
 from src.server.auth.schemas import UserCreate, UserRole
 from src.server.auth.service import (
+    SCOPE_CHAT_LLM_INVOKE,
     SCOPE_PROFILE_READ,
     create_user,
     get_role_scopes,
@@ -61,3 +62,7 @@ def test_create_user_defaults_scope_overrides_to_role_scopes(test_db_session: Se
 
     assert user.scope_overrides is None
     assert get_user_scopes(user) == get_role_scopes(UserRole.USER)
+
+
+def test_default_user_role_can_invoke_chat_llm():
+    assert SCOPE_CHAT_LLM_INVOKE in get_role_scopes(UserRole.USER)

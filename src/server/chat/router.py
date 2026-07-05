@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.server.auth.dependencies import get_current_user
 from src.server.auth.models import User
-from src.server.auth.service.scopes import SCOPE_PROFILE_READ
+from src.server.auth.service.scopes import SCOPE_CHAT_LLM_INVOKE
 from src.server.dao.dao_base import run_in_thread
 from src.server.database import get_db
 
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/chat", tags=["ChatWeb"])
 
 @router.get("/models", response_model=ChatModelsResponse, summary="列出可用模型")
 async def list_models(
-    _: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    _: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     snapshot = model_catalog.snapshot()
     return ChatModelsResponse(
@@ -47,7 +47,7 @@ async def list_models(
 @router.post("/images", response_model=ChatImageOut, summary="上传聊天图片")
 async def upload_image(
     file: UploadFile = File(...),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     stored = await image_service.store_upload(current_user.id, file)
     return ChatImageOut(
@@ -62,7 +62,7 @@ async def upload_image(
 @router.get("/images/{image_id}", summary="读取聊天图片")
 async def get_image(
     image_id: str,
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     stored = image_service.get_user_image(current_user.id, image_id)
     if stored is None:
@@ -101,7 +101,7 @@ async def get_shared_image(
 @router.get("/sessions", response_model=list[ChatSessionOut], summary="列出聊天会话")
 async def list_sessions(
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _list():
         return ChatDAO(db).list_sessions(user_id=current_user.id)
@@ -117,7 +117,7 @@ async def list_sessions(
 async def get_session(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _get():
         return service.get_session_detail(db, session_id=session_id, current_user=current_user)
@@ -134,7 +134,7 @@ async def update_session(
     session_id: str,
     payload: ChatSessionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _update():
         title = payload.title.strip()
@@ -166,7 +166,7 @@ async def update_session(
 async def delete_session(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _delete():
         deleted = ChatDAO(db).delete_session(
@@ -190,7 +190,7 @@ async def delete_session(
 async def create_session_share(
     session_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _create():
         return service.create_session_share(
@@ -207,7 +207,7 @@ async def edit_message_stream(
     message_id: int,
     payload: ChatStreamRequest,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     return StreamingResponse(
         service.stream_edit_message(
@@ -229,7 +229,7 @@ async def regenerate_stream(
     session_id: str,
     payload: ChatRegenerateRequest | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     return StreamingResponse(
         service.stream_regenerate(
@@ -253,7 +253,7 @@ async def activate_message_version(
     message_id: int,
     target_message_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     def _activate():
         return service.activate_message_version(
@@ -271,7 +271,7 @@ async def stream_run(
     run_id: str,
     after: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     return StreamingResponse(
         service.stream_run_events(
@@ -289,7 +289,7 @@ async def stream_run(
 async def stream_message(
     payload: ChatStreamRequest,
     db: Session = Depends(get_db),
-    current_user: User = Security(get_current_user, scopes=[SCOPE_PROFILE_READ]),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
 ):
     if payload.session_id and not ChatDAO(db).get_session(
         session_id=payload.session_id,

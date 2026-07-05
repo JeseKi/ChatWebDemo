@@ -30,6 +30,8 @@ import ProfilePage from '../../pages/profile/ProfilePage'
 import SecurityPage from '../../pages/profile/SecurityPage'
 import DevicesPage from '../../pages/profile/DevicesPage'
 
+const CHAT_LLM_INVOKE_SCOPE = 'chat:llm:invoke'
+
 export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -92,7 +94,7 @@ export default function MainLayout() {
     if (location.pathname === '/example') {
       return ['example']
     }
-    if (location.pathname === '/chat') {
+    if (location.pathname.startsWith('/chat')) {
       return ['chat']
     }
     if (location.pathname.startsWith('/')) {
@@ -102,26 +104,32 @@ export default function MainLayout() {
   }, [location.pathname])
 
   const menuItems = useMemo<MenuProps['items']>(() => {
+    const hasChatAccess = user?.effective_scopes.includes(CHAT_LLM_INVOKE_SCOPE) ?? false
+    const dashboardChildren: NonNullable<MenuProps['items']> = [
+      {
+        key: 'dashboard',
+        label: <Link to="/dashboard">首页</Link>,
+      },
+      {
+        key: 'example',
+        label: <Link to="/example">示例模块</Link>,
+      },
+    ]
+
+    if (hasChatAccess) {
+      dashboardChildren.push({
+        key: 'chat',
+        icon: <MessageOutlined />,
+        label: <Link to="/chat">ChatWeb</Link>,
+      })
+    }
+
     const items: MenuProps['items'] = [
       {
         key: 'dashboard-group',
         icon: <DashboardOutlined />,
         label: '工作台',
-        children: [
-          {
-            key: 'dashboard',
-            label: <Link to="/dashboard">首页</Link>,
-          },
-          {
-            key: 'example',
-            label: <Link to="/example">示例模块</Link>,
-          },
-          {
-            key: 'chat',
-            icon: <MessageOutlined />,
-            label: <Link to="/chat">ChatWeb</Link>,
-          },
-        ],
+        children: dashboardChildren,
       },
     ]
 
@@ -140,7 +148,7 @@ export default function MainLayout() {
     }
 
     return items
-  }, [user?.role])
+  }, [user?.effective_scopes, user?.role])
 
   const handleLogout = async () => {
     await logout()

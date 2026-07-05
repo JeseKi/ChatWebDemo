@@ -34,6 +34,7 @@ SCOPE_PROFILE_READ = "profile:read"
 SCOPE_PROFILE_WRITE = "profile:write"
 SCOPE_PROFILE_EMAIL_WRITE = "profile:email:write"
 SCOPE_PROFILE_PASSWORD_WRITE = "profile:password:write"
+SCOPE_CHAT_LLM_INVOKE = "chat:llm:invoke"
 SCOPE_ADMIN_USERS_READ = "admin:users:read"
 SCOPE_ADMIN_USERS_WRITE = "admin:users:write"
 
@@ -57,6 +58,11 @@ SCOPE_DEFINITIONS: tuple[ScopeDefinition, ...] = (
         scope=SCOPE_PROFILE_PASSWORD_WRITE,
         title="修改密码",
         description="发起当前用户的密码修改流程。",
+    ),
+    ScopeDefinition(
+        scope=SCOPE_CHAT_LLM_INVOKE,
+        title="调用 LLM 模型",
+        description="访问 ChatWeb 并调用已配置的大语言模型。",
     ),
     ScopeDefinition(
         scope=SCOPE_ADMIN_USERS_READ,
@@ -88,12 +94,14 @@ ROLE_SCOPES: dict[UserRole, tuple[str, ...]] = {
         SCOPE_PROFILE_WRITE,
         SCOPE_PROFILE_EMAIL_WRITE,
         SCOPE_PROFILE_PASSWORD_WRITE,
+        SCOPE_CHAT_LLM_INVOKE,
     ),
     UserRole.ADMIN: (
         SCOPE_PROFILE_READ,
         SCOPE_PROFILE_WRITE,
         SCOPE_PROFILE_EMAIL_WRITE,
         SCOPE_PROFILE_PASSWORD_WRITE,
+        SCOPE_CHAT_LLM_INVOKE,
         SCOPE_ADMIN_USERS_READ,
         SCOPE_ADMIN_USERS_WRITE,
     ),

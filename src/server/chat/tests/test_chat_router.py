@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, cast
 import pytest
 
 from src.server.chat import service
+from src.server.auth import service as auth_service
 from src.server.auth.models import User
 from src.server.chat.models import ChatMessage, ChatSession, ChatSessionShare
 from src.server.chat.dao import ChatDAO
@@ -782,3 +783,27 @@ def test_chat_requires_authentication(test_client):
         json={"message": "hello"},
     )
     assert stream_resp.status_code == HTTPStatus.UNAUTHORIZED
+
+
+def test_chat_requires_llm_invoke_scope(test_client, test_db_session):
+    user = User(
+        username="chat_scope_member",
+        email="chat_scope_member@example.com",
+        scope_overrides=auth_service.serialize_scopes([auth_service.SCOPE_PROFILE_READ]),
+    )
+    user.set_password("Password123")
+    test_db_session.add(user)
+    test_db_session.commit()
+
+    token = auth_service.create_access_token(
+        {"sub": user.username, "scope": auth_service.get_user_scopes(user)}
+    )
+    resp = test_client.get(
+        "/api/chat/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == HTTPStatus.FORBIDDEN
+    assert resp.json()["detail"]["required_scopes"] == [
+        auth_service.SCOPE_CHAT_LLM_INVOKE
+    ]

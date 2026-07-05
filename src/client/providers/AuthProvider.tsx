@@ -316,3 +316,34 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   return <>{children}</>
 }
+
+export function RequireScope({
+  children,
+  scope,
+  fallbackPath = '/dashboard',
+}: {
+  children: ReactNode
+  scope: string
+  fallbackPath?: string
+}) {
+  const { isAuthenticated, loading, user } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return (
+      <div className="theme-loading-text flex h-screen items-center justify-center">
+        正在验证登录状态...
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!user?.effective_scopes.includes(scope)) {
+    return <Navigate to={fallbackPath} replace />
+  }
+
+  return <>{children}</>
+}

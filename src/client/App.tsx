@@ -15,9 +15,11 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage'
 import OAuthAuthorizePage from './pages/auth/OAuthAuthorizePage'
 import OAuthDeviceAuthorizePage from './pages/auth/OAuthDeviceAuthorizePage'
 import LandingPage from './pages/landing/LandingPage'
-import { AuthProvider, RequireAdmin, RequireAuth } from './providers/AuthProvider'
+import { AuthProvider, RequireAdmin, RequireAuth, RequireScope } from './providers/AuthProvider'
 import { RuntimeConfigProvider } from './providers/RuntimeConfigProvider'
 import ThemeToggle from './components/theme/ThemeToggle'
+
+const CHAT_LLM_INVOKE_SCOPE = 'chat:llm:invoke'
 
 export default function App() {
   return (
@@ -35,17 +37,17 @@ export default function App() {
             <Route
               path="/chat"
               element={
-                <RequireAuth>
+                <RequireScope scope={CHAT_LLM_INVOKE_SCOPE}>
                   <ChatPage />
-                </RequireAuth>
+                </RequireScope>
               }
             />
             <Route
               path="/chat/:sessionId"
               element={
-                <RequireAuth>
+                <RequireScope scope={CHAT_LLM_INVOKE_SCOPE}>
                   <ChatPage />
-                </RequireAuth>
+                </RequireScope>
               }
             />
             <Route
