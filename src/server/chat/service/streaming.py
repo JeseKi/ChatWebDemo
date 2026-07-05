@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -11,6 +13,7 @@ from sqlalchemy.orm import Session
 from src.server.auth.models import User
 
 from ..dao import ChatDAO
+from ..models import ChatMessage, ChatRun, ChatSession
 from ..schemas import ChatImageReference
 from .events import sse_event
 from .images import append_image_markers, escape_image_markers, extract_image_urls
@@ -20,8 +23,15 @@ from .sessions import resolve_or_create_session
 from .streaming_support import (
     resolve_model,
     resolve_request_images,
-    stream_assistant_for_user,
 )
+
+
+@dataclass(frozen=True)
+class ChatRunIntent:
+    session: ChatSession
+    user_message: ChatMessage
+    assistant_message: ChatMessage
+    initial_events: list[tuple[str, dict[str, Any]]]
 
 
 async def stream_chat(
@@ -53,40 +63,213 @@ async def stream_chat(
         yield sse_event("error", {"message": "当前模型不支持图片"})
         return
 
+    intent = _prepare_new_message_run(
+        dao,
+        current_user=current_user,
+        session_id=session_id,
+        prompt=prompt,
+        request_images=request_images,
+        model_id=model_config.id,
+        thinking_effort=normalized_effort,
+    )
+    async for event in _start_and_stream_run(
+        db,
+        dao=dao,
+        current_user=current_user,
+        intent=intent,
+    ):
+        yield event
+
+
+def _prepare_new_message_run(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session_id: str | None,
+    prompt: str,
+    request_images: list[Any],
+    model_id: str,
+    thinking_effort: str | None,
+) -> ChatRunIntent:
     session = resolve_or_create_session(
         dao,
         current_user=current_user,
         session_id=session_id,
         first_message=prompt,
     )
-    content = append_image_markers(prompt, request_images)
     user_message = dao.append_message(
         session_id=session.id,
         user_id=current_user.id,
         role="user",
-        content=content,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
+        content=append_image_markers(prompt, request_images),
+        model_id=model_id,
+        thinking_effort=thinking_effort,
         parent_message_id=session.active_leaf_message_id,
     )
-    assistant_message = dao.append_message(
+    assistant_message = _append_assistant_placeholder(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+        model_id=model_id,
+        thinking_effort=thinking_effort,
+    )
+    return ChatRunIntent(
+        session=session,
+        user_message=user_message,
+        assistant_message=assistant_message,
+        initial_events=[
+            ("user_message", {"message": serialize_message(user_message, dao)}),
+        ],
+    )
+
+
+def _prepare_edit_message_run(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session: ChatSession,
+    original: ChatMessage,
+    prompt: str,
+    model_id: str,
+    thinking_effort: str | None,
+) -> ChatRunIntent:
+    source_message_id = original.source_message_id or original.id
+    user_message = dao.append_message(
+        session_id=session.id,
+        user_id=current_user.id,
+        role="user",
+        content=escape_image_markers(prompt),
+        model_id=model_id,
+        thinking_effort=thinking_effort,
+        parent_message_id=original.parent_message_id,
+        source_message_id=source_message_id,
+        version_index=dao.next_version_index(source_message_id=source_message_id),
+    )
+    assistant_message = _append_assistant_placeholder(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+        model_id=model_id,
+        thinking_effort=thinking_effort,
+    )
+    return ChatRunIntent(
+        session=session,
+        user_message=user_message,
+        assistant_message=assistant_message,
+        initial_events=[
+            (
+                "branch_reset",
+                {"parent_message_id": original.parent_message_id, "message_id": original.id},
+            ),
+            ("user_message", {"message": serialize_message(user_message, dao)}),
+        ],
+    )
+
+
+def _prepare_regenerate_run(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session: ChatSession,
+    user_message: ChatMessage,
+    model_id: str,
+    thinking_effort: str | None,
+) -> ChatRunIntent:
+    source_message_id = _regenerate_source_message_id(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+    )
+    assistant_message = _append_assistant_placeholder(
+        dao,
+        current_user=current_user,
+        session=session,
+        user_message=user_message,
+        model_id=model_id,
+        thinking_effort=thinking_effort,
+        source_message_id=source_message_id,
+        version_index=(
+            dao.next_version_index(source_message_id=source_message_id)
+            if source_message_id is not None
+            else 1
+        ),
+    )
+    return ChatRunIntent(
+        session=session,
+        user_message=user_message,
+        assistant_message=assistant_message,
+        initial_events=[
+            ("branch_reset", {"parent_message_id": user_message.id}),
+        ],
+    )
+
+
+def _append_assistant_placeholder(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session: ChatSession,
+    user_message: ChatMessage,
+    model_id: str,
+    thinking_effort: str | None,
+    source_message_id: int | None = None,
+    version_index: int = 1,
+) -> ChatMessage:
+    return dao.append_message(
         session_id=session.id,
         user_id=current_user.id,
         role="assistant",
         content="",
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
+        model_id=model_id,
+        thinking_effort=thinking_effort,
         parent_message_id=user_message.id,
+        source_message_id=source_message_id,
+        version_index=version_index,
     )
+
+
+def _regenerate_source_message_id(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    session: ChatSession,
+    user_message: ChatMessage,
+) -> int | None:
+    source_message_id = session.active_leaf_message_id
+    if source_message_id is None:
+        return None
+
+    source_message = dao.get_message(message_id=source_message_id, user_id=current_user.id)
+    if (
+        source_message is None
+        or source_message.role != "assistant"
+        or source_message.parent_message_id != user_message.id
+    ):
+        return None
+    return source_message.source_message_id or source_message.id
+
+
+def _create_run_for_intent(
+    dao: ChatDAO,
+    *,
+    current_user: User,
+    intent: ChatRunIntent,
+) -> ChatRun:
     run = dao.create_run(
-        session_id=session.id,
+        session_id=intent.session.id,
         user_id=current_user.id,
-        user_message_id=user_message.id,
-        assistant_message_id=assistant_message.id,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
+        user_message_id=intent.user_message.id,
+        assistant_message_id=intent.assistant_message.id,
+        model_id=intent.assistant_message.model_id,
+        thinking_effort=intent.assistant_message.thinking_effort,
     )
-    session = dao.get_session(session_id=session.id, user_id=current_user.id) or session
+    session = (
+        dao.get_session(session_id=intent.session.id, user_id=current_user.id)
+        or intent.session
+    )
     dao.append_run_event(
         run_id=run.id,
         session_id=session.id,
@@ -94,20 +277,27 @@ async def stream_chat(
         event_type="session_ready",
         data={"session": serialize_session(session), "run": {"id": run.id}},
     )
-    dao.append_run_event(
-        run_id=run.id,
-        session_id=session.id,
-        user_id=current_user.id,
-        event_type="user_message",
-        data={"message": serialize_message(user_message, dao)},
-    )
+    for event_type, data in intent.initial_events:
+        dao.append_run_event(
+            run_id=run.id,
+            session_id=session.id,
+            user_id=current_user.id,
+            event_type=event_type,
+            data=data,
+        )
+    return run
 
+
+async def _start_and_stream_run(
+    db: Session,
+    *,
+    dao: ChatDAO,
+    current_user: User,
+    intent: ChatRunIntent,
+) -> AsyncIterator[str]:
+    run = _create_run_for_intent(dao, current_user=current_user, intent=intent)
     manager.start(run.id, build_session_factory(db))
-    async for event in stream_run_events(
-        db,
-        run_id=run.id,
-        user_id=current_user.id,
-    ):
+    async for event in stream_run_events(db, run_id=run.id, user_id=current_user.id):
         yield event
 
 
@@ -147,32 +337,20 @@ async def stream_edit_message(
         yield sse_event("error", {"message": "含图片的消息暂不支持编辑"})
         return
 
-    source_message_id = original.source_message_id or original.id
-    content = escape_image_markers(prompt)
-    user_message = dao.append_message(
-        session_id=session.id,
-        user_id=current_user.id,
-        role="user",
-        content=content,
-        model_id=model_config.id,
-        thinking_effort=normalized_effort,
-        parent_message_id=original.parent_message_id,
-        source_message_id=source_message_id,
-        version_index=dao.next_version_index(source_message_id=source_message_id),
-    )
-    yield sse_event("session_ready", {"session": serialize_session(session)})
-    yield sse_event(
-        "branch_reset",
-        {"parent_message_id": original.parent_message_id, "message_id": original.id},
-    )
-    yield sse_event("user_message", {"message": serialize_message(user_message, dao)})
-    async for event in stream_assistant_for_user(
+    intent = _prepare_edit_message_run(
         dao,
         current_user=current_user,
         session=session,
-        user_message=user_message,
-        model_config=model_config,
+        original=original,
+        prompt=prompt,
+        model_id=model_config.id,
         thinking_effort=normalized_effort,
+    )
+    async for event in _start_and_stream_run(
+        db,
+        dao=dao,
+        current_user=current_user,
+        intent=intent,
     ):
         yield event
 
@@ -202,24 +380,18 @@ async def stream_regenerate(
         yield sse_event("error", {"message": "没有可重新生成的用户消息"})
         return
 
-    previous_leaf_message_id = session.active_leaf_message_id
-    session = (
-        dao.set_active_leaf(
-            session_id=session.id,
-            user_id=current_user.id,
-            message_id=user_message.id,
-        )
-        or session
-    )
-    yield sse_event("session_ready", {"session": serialize_session(session)})
-    yield sse_event("branch_reset", {"parent_message_id": user_message.id})
-    async for event in stream_assistant_for_user(
+    intent = _prepare_regenerate_run(
         dao,
         current_user=current_user,
         session=session,
         user_message=user_message,
-        regenerate_source_message_id=previous_leaf_message_id,
-        model_config=model_config,
+        model_id=model_config.id,
         thinking_effort=normalized_effort,
+    )
+    async for event in _start_and_stream_run(
+        db,
+        dao=dao,
+        current_user=current_user,
+        intent=intent,
     ):
         yield event

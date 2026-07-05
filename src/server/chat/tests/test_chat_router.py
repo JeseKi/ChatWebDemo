@@ -35,6 +35,24 @@ def _parse_sse(text: str) -> list[dict[str, Any]]:
     return events
 
 
+async def _collect_stream_events(stream) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    async for chunk in stream:
+        events.extend(_parse_sse(chunk))
+    return events
+
+
+async def _wait_for_run_succeeded(test_db_session, *, run_id: str) -> None:
+    dao = ChatDAO(test_db_session)
+    for _ in range(30):
+        await asyncio.sleep(0.02)
+        test_db_session.expire_all()
+        run = dao.get_run_by_id(run_id=run_id)
+        if run and run.status == "succeeded":
+            return
+    raise AssertionError("background chat run did not finish")
+
+
 def test_stream_chat_persists_messages_and_tool_calls(
     test_client, init_test_database, monkeypatch
 ):
@@ -220,6 +238,164 @@ def test_stream_chat_background_run_survives_client_disconnect(
         "content_delta",
         "done",
     ]
+
+
+def test_edit_message_background_run_survives_client_disconnect(
+    test_db_session, init_test_database, monkeypatch
+):
+    current_user = test_db_session.query(User).filter(User.username == "admin").one()
+
+    async def first_agent(prompt: str, *, user_id: str):
+        yield SimpleNamespace(event="RunContent", content="旧回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    initial_events = asyncio.run(
+        _collect_stream_events(
+            service.stream_chat(
+                test_db_session,
+                current_user=current_user,
+                message="旧问题",
+                session_id=None,
+                model_id="test-model",
+                thinking_effort="low",
+            )
+        )
+    )
+    session_id = initial_events[-1]["data"]["session"]["id"]
+    test_db_session.expire_all()
+    old_user_id = service.get_session_detail(
+        test_db_session,
+        session_id=session_id,
+        current_user=current_user,
+    ).messages[0].id
+
+    async def edited_agent(prompt: str, *, user_id: str):
+        await asyncio.sleep(0.01)
+        yield SimpleNamespace(event="RunContent", content="新回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", edited_agent)
+
+    async def exercise_disconnect():
+        stream = service.stream_edit_message(
+            test_db_session,
+            current_user=current_user,
+            message_id=old_user_id,
+            message="新问题",
+            model_id="test-model",
+            thinking_effort="low",
+        )
+        stream = cast(AsyncGenerator[str, None], stream)
+        first = _parse_sse(await stream.__anext__())[0]
+        second = _parse_sse(await stream.__anext__())[0]
+        third = _parse_sse(await stream.__anext__())[0]
+        assert [first["event"], second["event"], third["event"]] == [
+            "session_ready",
+            "branch_reset",
+            "user_message",
+        ]
+        run_id = first["data"]["run"]["id"]
+        await stream.aclose()
+        await _wait_for_run_succeeded(test_db_session, run_id=run_id)
+        return run_id
+
+    run_id = asyncio.run(exercise_disconnect())
+    test_db_session.expire_all()
+    detail = service.get_session_detail(
+        test_db_session,
+        session_id=session_id,
+        current_user=current_user,
+    )
+    assert detail.active_run is None
+    assert [message.content for message in detail.messages] == ["新问题", "新回复"]
+    assert detail.messages[0].source_message_id == old_user_id
+
+    replay_events = asyncio.run(
+        _collect_stream_events(
+            service.stream_run_events(
+                test_db_session,
+                run_id=run_id,
+                user_id=current_user.id,
+                after=3,
+            )
+        )
+    )
+    assert [event["event"] for event in replay_events] == ["content_delta", "done"]
+    assert all(event["data"]["run_id"] == run_id for event in replay_events)
+    assert [event["data"]["seq"] for event in replay_events] == [4, 5]
+
+
+def test_regenerate_background_run_survives_client_disconnect(
+    test_db_session, init_test_database, monkeypatch
+):
+    current_user = test_db_session.query(User).filter(User.username == "admin").one()
+
+    async def first_agent(prompt: str, *, user_id: str):
+        yield SimpleNamespace(event="RunContent", content="第一次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", first_agent)
+    initial_events = asyncio.run(
+        _collect_stream_events(
+            service.stream_chat(
+                test_db_session,
+                current_user=current_user,
+                message="请回答",
+                session_id=None,
+                model_id="test-model",
+                thinking_effort="low",
+            )
+        )
+    )
+    session_id = initial_events[-1]["data"]["session"]["id"]
+    old_assistant_id = initial_events[-1]["data"]["message"]["id"]
+
+    async def regenerated_agent(prompt: str, *, user_id: str):
+        await asyncio.sleep(0.01)
+        yield SimpleNamespace(event="RunContent", content="第二次回复")
+
+    monkeypatch.setattr(service, "stream_agent_events", regenerated_agent)
+
+    async def exercise_disconnect():
+        stream = service.stream_regenerate(
+            test_db_session,
+            current_user=current_user,
+            session_id=session_id,
+            model_id="test-model",
+            thinking_effort="low",
+        )
+        stream = cast(AsyncGenerator[str, None], stream)
+        first = _parse_sse(await stream.__anext__())[0]
+        second = _parse_sse(await stream.__anext__())[0]
+        assert [first["event"], second["event"]] == ["session_ready", "branch_reset"]
+        run_id = first["data"]["run"]["id"]
+        await stream.aclose()
+        await _wait_for_run_succeeded(test_db_session, run_id=run_id)
+        return run_id
+
+    run_id = asyncio.run(exercise_disconnect())
+    test_db_session.expire_all()
+    detail = service.get_session_detail(
+        test_db_session,
+        session_id=session_id,
+        current_user=current_user,
+    )
+    assert detail.active_run is None
+    assert [message.content for message in detail.messages] == ["请回答", "第二次回复"]
+    assert detail.messages[1].source_message_id == old_assistant_id
+    assert detail.messages[1].version_index == 2
+
+    replay_events = asyncio.run(
+        _collect_stream_events(
+            service.stream_run_events(
+                test_db_session,
+                run_id=run_id,
+                user_id=current_user.id,
+                after=2,
+            )
+        )
+    )
+    assert [event["event"] for event in replay_events] == ["content_delta", "done"]
+    assert all(event["data"]["run_id"] == run_id for event in replay_events)
+    assert [event["data"]["seq"] for event in replay_events] == [3, 4]
 
 
 def test_update_and_delete_chat_session(
