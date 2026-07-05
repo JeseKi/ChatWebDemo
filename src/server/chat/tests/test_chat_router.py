@@ -3,7 +3,7 @@ import json
 import asyncio
 from http import HTTPStatus
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, AsyncGenerator, cast
 
 from src.server.chat import service
 from src.server.auth.models import User
@@ -181,6 +181,7 @@ def test_stream_chat_background_run_survives_client_disconnect(
             model_id="test-model",
             thinking_effort="low",
         )
+        stream = cast(AsyncGenerator[str, None], stream)
         first = _parse_sse(await stream.__anext__())[0]
         second = _parse_sse(await stream.__anext__())[0]
         assert first["event"] == "session_ready"
