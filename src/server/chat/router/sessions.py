@@ -14,7 +14,12 @@ from src.server.database import get_db
 
 from .. import service
 from ..dao import ChatDAO
-from ..schemas import ChatSessionDetailOut, ChatSessionOut, ChatSessionUpdate
+from ..schemas import (
+    ChatSessionBulkDelete,
+    ChatSessionDetailOut,
+    ChatSessionOut,
+    ChatSessionUpdate,
+)
 from .base import router
 
 
@@ -76,6 +81,30 @@ async def update_session(
         return session
 
     return await run_in_thread(_update)
+
+
+@router.delete(
+    "/sessions/bulk",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="批量删除聊天会话",
+)
+async def bulk_delete_sessions(
+    payload: ChatSessionBulkDelete,
+    db: Session = Depends(get_db),
+    current_user: User = Security(get_current_user, scopes=[SCOPE_CHAT_LLM_INVOKE]),
+):
+    def _delete():
+        deleted = ChatDAO(db).delete_sessions(
+            session_ids=payload.session_ids,
+            user_id=current_user.id,
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="一个或多个聊天会话不存在",
+            )
+
+    return await run_in_thread(_delete)
 
 
 @router.delete(

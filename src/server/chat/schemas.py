@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -31,6 +31,18 @@ class ChatStreamRequest(BaseModel):
 
 class ChatSessionUpdate(BaseModel):
     title: str = Field(..., min_length=1, max_length=160)
+
+
+class ChatSessionBulkDelete(BaseModel):
+    session_ids: list[Annotated[str, Field(pattern=CHAT_SESSION_ID_PATTERN)]] = Field(
+        ..., min_length=1, max_length=50
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_session_ids(self) -> "ChatSessionBulkDelete":
+        if len(self.session_ids) != len(set(self.session_ids)):
+            raise ValueError("会话ID不能重复")
+        return self
 
 
 class ChatRegenerateRequest(BaseModel):

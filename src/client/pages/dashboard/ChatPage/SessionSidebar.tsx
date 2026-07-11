@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   Divider,
   Empty,
   Flex,
@@ -25,6 +26,7 @@ import type { ChatSession } from '../../../lib/chat'
 
 export default function SessionSidebar({
   sessions,
+  selectedSessionIds,
   activeSessionId,
   loadingSessions,
   editingSessionId,
@@ -37,9 +39,13 @@ export default function SessionSidebar({
   onCancelEditingSession,
   onSaveSessionTitle,
   onDeleteSession,
+  onDeleteSessions,
+  onToggleSessionSelection,
+  onSelectAllSessions,
   onClose,
 }: {
   sessions: ChatSession[]
+  selectedSessionIds: string[]
   activeSessionId: string | null
   loadingSessions: boolean
   editingSessionId: string | null
@@ -52,6 +58,9 @@ export default function SessionSidebar({
   onCancelEditingSession: () => void
   onSaveSessionTitle: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onDeleteSessions: (sessionIds: string[]) => void
+  onToggleSessionSelection: (sessionId: string) => void
+  onSelectAllSessions: (selected: boolean) => void
   onClose: () => void
 }) {
   return (
@@ -90,6 +99,36 @@ export default function SessionSidebar({
         新聊天
       </Button>
       <Divider style={{ margin: '12px 0' }} />
+      {sessions.length > 0 && (
+        <Flex align="center" justify="space-between" style={{ marginBottom: 8 }}>
+          <Checkbox
+            checked={selectedSessionIds.length === sessions.length}
+            indeterminate={selectedSessionIds.length > 0 && selectedSessionIds.length < sessions.length}
+            onChange={(event) => onSelectAllSessions(event.target.checked)}
+          >
+            全选
+          </Checkbox>
+          {selectedSessionIds.length > 0 && (
+            <Popconfirm
+              title="批量删除会话"
+              description={`确定删除选中的 ${selectedSessionIds.length} 个会话吗？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => onDeleteSessions(selectedSessionIds)}
+            >
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                loading={mutatingSessionId === 'bulk'}
+              >
+                删除所选 ({selectedSessionIds.length})
+              </Button>
+            </Popconfirm>
+          )}
+        </Flex>
+      )}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Spin spinning={loadingSessions}>
           <List
@@ -110,6 +149,8 @@ export default function SessionSidebar({
                 onCancelEditingSession={onCancelEditingSession}
                 onSaveSessionTitle={onSaveSessionTitle}
                 onDeleteSession={onDeleteSession}
+                selected={selectedSessionIds.includes(session.id)}
+                onToggleSessionSelection={onToggleSessionSelection}
               />
             )}
           />
@@ -131,6 +172,8 @@ function SessionListItem({
   onCancelEditingSession,
   onSaveSessionTitle,
   onDeleteSession,
+  selected,
+  onToggleSessionSelection,
 }: {
   session: ChatSession
   activeSessionId: string | null
@@ -143,6 +186,8 @@ function SessionListItem({
   onCancelEditingSession: () => void
   onSaveSessionTitle: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  selected: boolean
+  onToggleSessionSelection: (sessionId: string) => void
 }) {
   const { token } = theme.useToken()
 
@@ -161,7 +206,15 @@ function SessionListItem({
       }}
     >
       <List.Item.Meta
-        avatar={<MessageOutlined style={{ color: token.colorPrimary }} />}
+        avatar={
+          <Flex align="center" gap={6} onClick={(event) => event.stopPropagation()}>
+            <Checkbox
+              checked={selected}
+              onChange={() => onToggleSessionSelection(session.id)}
+            />
+            <MessageOutlined style={{ color: token.colorPrimary }} />
+          </Flex>
+        }
         title={
           editingSessionId === session.id ? (
             <SessionTitleEditor

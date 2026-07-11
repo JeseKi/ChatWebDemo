@@ -6,7 +6,13 @@ from __future__ import annotations
 from .base import router
 from .images import get_image, upload_image
 from .models import list_models
-from .sessions import delete_session, get_session, list_sessions, update_session
+from .sessions import (
+    bulk_delete_sessions,
+    delete_session,
+    get_session,
+    list_sessions,
+    update_session,
+)
 from .shares import create_session_share, get_shared_image, get_shared_session
 from .streams import (
     activate_message_version,
@@ -18,6 +24,7 @@ from .streams import (
 
 __all__ = [
     "activate_message_version",
+    "bulk_delete_sessions",
     "create_session_share",
     "delete_session",
     "edit_message_stream",

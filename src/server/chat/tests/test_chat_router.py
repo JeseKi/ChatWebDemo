@@ -494,6 +494,31 @@ def test_update_and_delete_chat_session(
     assert list_after_delete_resp.json() == []
 
 
+def test_bulk_delete_chat_sessions(test_client, test_db_session, init_test_database):
+    headers = _login_admin(test_client)
+    dao = ChatDAO(test_db_session)
+    sessions = [
+        dao.create_session(user_id=1, title=f"批量删除会话 {index}")
+        for index in range(3)
+    ]
+
+    delete_resp = test_client.request(
+        "DELETE",
+        "/api/chat/sessions/bulk",
+        json={"session_ids": [session.id for session in sessions[:2]]},
+        headers=headers,
+    )
+    assert delete_resp.status_code == HTTPStatus.NO_CONTENT, delete_resp.text
+
+    test_db_session.expire_all()
+    assert all(session.deleted_at is not None for session in sessions[:2])
+    assert sessions[2].deleted_at is None
+
+    list_resp = test_client.get("/api/chat/sessions", headers=headers)
+    assert list_resp.status_code == HTTPStatus.OK, list_resp.text
+    assert [item["id"] for item in list_resp.json()] == [sessions[2].id]
+
+
 def test_edit_user_message_creates_active_branch(
     test_client, test_db_session, init_test_database, monkeypatch
 ):

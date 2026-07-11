@@ -206,6 +206,12 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   await api.delete(`/chat/sessions/${sessionId}`)
 }
 
+export async function deleteChatSessions(sessionIds: string[]): Promise<void> {
+  await api.delete('/chat/sessions/bulk', {
+    data: { session_ids: sessionIds },
+  })
+}
+
 export async function createChatSessionShare(sessionId: string): Promise<ChatSessionShare> {
   const { data } = await api.post<ChatSessionShare>(`/chat/sessions/${sessionId}/shares`)
   return data

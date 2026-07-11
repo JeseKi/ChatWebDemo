@@ -29,6 +29,7 @@ export function useChatPageController() {
   const navigate = useNavigate()
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>()
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [contextCompressions, setContextCompressions] = useState<ChatContextCompression[]>([])
@@ -119,6 +120,9 @@ export function useChatPageController() {
     try {
       const result = await chatApi.listChatSessions()
       setSessions(result)
+      setSelectedSessionIds((current) =>
+        current.filter((sessionId) => result.some((session) => session.id === sessionId)),
+      )
     } catch (error) {
       toast.error(resolveErrorMessage(error))
     } finally {
@@ -232,27 +236,56 @@ export function useChatPageController() {
     }
   }
 
-  const deleteSession = async (sessionId: string) => {
-    setMutatingSessionId(sessionId)
+  const toggleSessionSelection = (sessionId: string) => {
+    setSelectedSessionIds((current) =>
+      current.includes(sessionId)
+        ? current.filter((item) => item !== sessionId)
+        : [...current, sessionId],
+    )
+  }
+
+  const selectAllSessions = (selected: boolean) => {
+    setSelectedSessionIds(selected ? sessions.map((session) => session.id) : [])
+  }
+
+  const deleteSessions = async (sessionIds: string[]) => {
+    const ids = [...new Set(sessionIds)]
+    if (ids.length === 0) return
+
+    setMutatingSessionId(ids.length === 1 ? ids[0] : 'bulk')
     try {
-      await chatApi.deleteChatSession(sessionId)
-      let nextActiveSessionId: string | null = null
-      setSessions((current) => {
-        const next = current.filter((session) => session.id !== sessionId)
-        nextActiveSessionId = next[0]?.id ?? null
-        return next
-      })
-      if (activeSessionId === sessionId && nextActiveSessionId) await loadSession(nextActiveSessionId)
-      if (activeSessionId === sessionId && !nextActiveSessionId) {
-        startNewSession()
+      if (ids.length === 1) {
+        await chatApi.deleteChatSession(ids[0])
+      } else {
+        await chatApi.deleteChatSessions(ids)
       }
-      if (editingSessionId === sessionId) cancelEditingSession()
-      toast.success('会话已删除')
+
+      const deletedIds = new Set(ids)
+      const nextSessions = sessions.filter((session) => !deletedIds.has(session.id))
+      setSessions(nextSessions)
+      setSelectedSessionIds([])
+
+      if (activeSessionId && deletedIds.has(activeSessionId)) {
+        const nextActiveSessionId = nextSessions[0]?.id ?? null
+        if (nextActiveSessionId) {
+          await loadSession(nextActiveSessionId)
+        } else {
+          startNewSession()
+        }
+      }
+      if (editingSessionId && deletedIds.has(editingSessionId)) {
+        cancelEditingSession()
+      }
+      toast.success(ids.length === 1 ? '会话已删除' : `已删除 ${ids.length} 个会话`)
     } catch (error) {
       toast.error(resolveErrorMessage(error))
     } finally {
       setMutatingSessionId(null)
     }
+  }
+
+  const deleteSession = async (sessionId: string) => {
+    await deleteSessions([sessionId])
   }
 
   const stopStreaming = () => {
@@ -543,7 +576,7 @@ export function useChatPageController() {
   }
 
   return {
-    sessions, activeSessionId, activeSession, messages, contextCompressions, input,
+    sessions, selectedSessionIds, activeSessionId, activeSession, messages, contextCompressions, input,
     models, modelConfigError, selectedModelId, selectedVariant,
     selectedModel, selectedModelThinkingEntries, pendingImageFiles,
     composerDisabledReason,
@@ -553,7 +586,8 @@ export function useChatPageController() {
     setEditingMessageContent, setSelectedModelId, setSelectedVariant,
     addPendingImageFiles, removePendingImageFile,
     startNewSession, loadSession, startEditingSession,
-    cancelEditingSession, saveSessionTitle, deleteSession, stopStreaming,
+    cancelEditingSession, saveSessionTitle, toggleSessionSelection, selectAllSessions,
+    deleteSession, deleteSessions, stopStreaming,
     startEditingMessage, cancelEditingMessage, saveEditedMessage,
     regenerateLatestMessage, activateMessageVersion, sendMessage,
     shareActiveSession, closeShareModal,

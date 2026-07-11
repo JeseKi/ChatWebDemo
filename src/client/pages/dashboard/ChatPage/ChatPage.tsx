@@ -145,6 +145,7 @@ export default function ChatPage() {
       >
         <SessionSidebar
           sessions={chat.sessions}
+          selectedSessionIds={chat.selectedSessionIds}
           activeSessionId={chat.activeSessionId}
           loadingSessions={chat.loadingSessions}
           editingSessionId={chat.editingSessionId}
@@ -157,6 +158,9 @@ export default function ChatPage() {
           onCancelEditingSession={chat.cancelEditingSession}
           onSaveSessionTitle={(sessionId) => void chat.saveSessionTitle(sessionId)}
           onDeleteSession={(sessionId) => void chat.deleteSession(sessionId)}
+          onDeleteSessions={(sessionIds) => void chat.deleteSessions(sessionIds)}
+          onToggleSessionSelection={chat.toggleSessionSelection}
+          onSelectAllSessions={chat.selectAllSessions}
           onClose={closeSessionDrawer}
         />
       </Drawer>

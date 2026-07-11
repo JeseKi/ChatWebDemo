@@ -93,6 +93,30 @@ class ChatSessionDAO(BaseDAO):
             self.db_session.commit()
         return True
 
+    def delete_sessions(
+        self, *, session_ids: list[str], user_id: int, commit: bool = True
+    ) -> bool:
+        sessions = (
+            self.db_session.query(ChatSession)
+            .filter(
+                ChatSession.id.in_(session_ids),
+                ChatSession.user_id == user_id,
+                ChatSession.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if len(sessions) != len(session_ids):
+            return False
+
+        now = datetime.now(timezone.utc)
+        for session in sessions:
+            session.deleted_at = now
+            session.updated_at = now
+        self.db_session.flush()
+        if commit:
+            self.db_session.commit()
+        return True
+
     def touch_session(self, *, session_id: str, user_id: int) -> None:
         session = self.get_session(session_id=session_id, user_id=user_id)
         if session:
